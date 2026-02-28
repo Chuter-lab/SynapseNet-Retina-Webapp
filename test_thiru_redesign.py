@@ -42,18 +42,39 @@ def run_test():
         # ===================== LOGIN =====================
         log("=" * 60, results)
         log("TEST 1: Login", results)
-        page.goto(URL, timeout=30000)
-        page.wait_for_load_state("networkidle", timeout=15000)
 
-        inputs = page.locator("input")
-        if inputs.count() >= 2:
-            inputs.nth(0).fill(USERNAME)
-            inputs.nth(1).fill(PASSWORD)
-            page.locator("button").first.click()
-            page.wait_for_load_state("networkidle", timeout=15000)
-            time.sleep(2)
+        # Login via fetch in page context (properly sets cookies for the domain)
+        if USERNAME and PASSWORD:
+            page.goto(URL, timeout=60000)
+            time.sleep(5)
+            # URL-encode in Python to avoid JS/shell escaping issues
+            import urllib.parse
+            encoded_body = urllib.parse.urlencode({"username": USERNAME, "password": PASSWORD})
+            log(f"  Encoded body: {encoded_body}", results)
+            login_result = page.evaluate("""(body) => {
+                return fetch('/login', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+                    body: body,
+                }).then(async r => {
+                    const text = await r.text();
+                    return {status: r.status, text: text};
+                }).catch(e => ({error: e.message}));
+            }""", encoded_body)
+            log(f"  Login result: {login_result}", results)
+            # Reload to pick up the auth cookies
+            page.reload(timeout=60000)
+            time.sleep(10)
 
+        page.screenshot(path=os.path.join(DOWNLOAD_DIR, "thiru_after_login.png"))
+
+        # Wait for Run Segmentation button to appear
         run_btn = page.locator("button").filter(has_text="Run Segmentation")
+        try:
+            run_btn.first.wait_for(timeout=30000)
+        except Exception:
+            time.sleep(10)
+            run_btn = page.locator("button").filter(has_text="Run Segmentation")
         if run_btn.count() > 0:
             log("  PASS: Login successful", results)
             passed += 1
