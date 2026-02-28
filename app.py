@@ -170,12 +170,8 @@ def create_app():
     _ensure_dirs()
 
     available = _check_models()
-    model_status_parts = []
-    for struct, is_available in available.items():
-        icon = "&#9989;" if is_available else "&#10060;"
-        label = config.STRUCTURES[struct]["label"]
-        model_status_parts.append(f"{icon} {label}")
-    model_status = " &nbsp;|&nbsp; ".join(model_status_parts)
+    model_labels = [config.STRUCTURES[s]["label"] for s, ok in available.items() if ok]
+    model_status = " | ".join(model_labels)
 
     logo_svg = _load_logo_svg()
 
@@ -185,9 +181,12 @@ def create_app():
         --color-accent-soft: #dbeafe;
     }
     .model-status { font-size: 0.9em; padding: 8px 12px; background: #f8fafc; border-radius: 6px; }
-    .thiru-header { text-align: center; margin-bottom: 8px; }
+    .thiru-header { margin-bottom: 8px; }
     .thiru-header svg { max-height: 80px; width: auto; }
     .thiru-subtitle { color: #64748b; font-size: 0.95em; margin-top: 4px; letter-spacing: 0.5px; }
+    .thiru-policy { color: #94a3b8; font-size: 0.8em; line-height: 1.5; margin-top: 10px; }
+    .thiru-policy p { margin: 4px 0; }
+    .thiru-policy strong { color: #64748b; }
     footer { display: none !important; }
     /* Hide Gradio PWA install banner */
     .pwa-install-container, .pwa-toast, [class*="pwa"] { display: none !important; }
@@ -203,6 +202,10 @@ def create_app():
             <div class="thiru-header">
                 {logo_svg}
                 <div class="thiru-subtitle">TEM Histological Image Recognition for Ultrastructure</div>
+                <div class="thiru-policy">
+                    <p><strong>Data policy:</strong> Uploaded images are stored temporarily and deleted within 24 hours. Cached results are retained for up to 30 days, then automatically removed.</p>
+                    <p><strong>License:</strong> This software is licensed under CC BY-NC-ND 4.0. Free for academic and non-commercial use with attribution. Commercial use and derivative works are prohibited.</p>
+                </div>
             </div>
             """)
         else:
@@ -210,6 +213,10 @@ def create_app():
             <div class="thiru-header">
                 <h1 style="margin:0;">THIRU</h1>
                 <div class="thiru-subtitle">TEM Histological Image Recognition for Ultrastructure</div>
+                <div class="thiru-policy">
+                    <p><strong>Data policy:</strong> Uploaded images are stored temporarily and deleted within 24 hours. Cached results are retained for up to 30 days, then automatically removed.</p>
+                    <p><strong>License:</strong> This software is licensed under CC BY-NC-ND 4.0. Free for academic and non-commercial use with attribution. Commercial use and derivative works are prohibited.</p>
+                </div>
             </div>
             """)
 
