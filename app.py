@@ -1,0 +1,264 @@
+"""SynapseNet-Retina Web Application.
+
+Gradio-based interface for retinal EM synapse segmentation.
+Segments synaptic vesicles, mitochondria, and presynaptic membrane.
+"""
+import gradio as gr
+import numpy as np
+import cv2
+import tifffile
+import tempfile
+import time
+from pathlib import Path
+from PIL import Image
+import io
+import torch
+
+import config
+import inference
+import visualization
+
+
+def _ensure_dirs():
+    """Create required directories."""
+    for d in [config.UPLOAD_DIR, config.TEMP_DIR, config.LOG_DIR, config.MODELS_DIR]:
+        d.mkdir(parents=True, exist_ok=True)
+
+
+def _load_image(file_path):
+    """Load image from file path, return grayscale numpy array."""
+    path = Path(file_path)
+    suffix = path.suffix.lower()
+
+    if suffix in (".tif", ".tiff"):
+        img = tifffile.imread(str(path))
+    else:
+        img = np.array(Image.open(str(path)))
+
+    # Convert to grayscale if needed
+    if img.ndim == 3:
+        if img.shape[2] == 4:  # RGBA
+            img = img[:, :, :3]
+        img = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
+
+    return img
+
+
+def _check_models():
+    """Check which models are available."""
+    available = {}
+    for struct, path in config.CHECKPOINTS.items():
+        available[struct] = path.exists()
+    return available
+
+
+def _gpu_status_html():
+    """Generate GPU status HTML."""
+    try:
+        if not torch.cuda.is_available():
+            return '<span style="color:#e74c3c;">No GPU available</span>'
+        name = torch.cuda.get_device_name(config.GPU_ID)
+        mem_used = torch.cuda.memory_allocated(config.GPU_ID) / 1024**2
+        mem_total = torch.cuda.get_device_properties(config.GPU_ID).total_mem / 1024**2
+        return f'<span style="color:#2ecc71;">{name} ({mem_used:.0f}/{mem_total:.0f} MB)</span>'
+    except Exception:
+        return '<span style="color:#95a5a6;">GPU status unavailable</span>'
+
+
+def process_image(file, structures, threshold, progress=gr.Progress()):
+    """Main processing function called by Gradio."""
+    if file is None:
+        raise gr.Error("Please upload an image first.")
+
+    t0 = time.time()
+
+    # Parse selected structures
+    struct_map = {
+        "Synaptic Vesicles": "vesicles",
+        "Mitochondria": "mitochondria",
+        "Presynaptic Membrane": "membrane",
+    }
+    selected = [struct_map[s] for s in structures if s in struct_map]
+
+    if not selected:
+        raise gr.Error("Please select at least one structure to segment.")
+
+    # Check model availability
+    available = _check_models()
+    missing = [s for s in selected if not available.get(s, False)]
+    if missing:
+        raise gr.Error(f"Models not found for: {', '.join(missing)}. Check deployment.")
+
+    progress(0.1, desc="Loading image...")
+
+    # Load image
+    img_gray = _load_image(file)
+    h, w = img_gray.shape
+    progress(0.2, desc=f"Image loaded: {w}x{h}")
+
+    # Run segmentation
+    progress(0.3, desc="Running segmentation...")
+    results = inference.segment(img_gray, structures=selected, threshold=threshold)
+
+    progress(0.8, desc="Creating visualization...")
+
+    # Create overlay
+    overlay_bgr = visualization.create_overlay(img_gray, results)
+    overlay_rgb = cv2.cvtColor(overlay_bgr, cv2.COLOR_BGR2RGB)
+    overlay_display = visualization.resize_for_display(overlay_rgb)
+
+    # Create individual structure panels
+    panels = visualization.create_panel(img_gray, results)
+
+    # Build gallery images
+    gallery_images = []
+
+    # Overlay
+    gallery_images.append((overlay_display, "Overlay"))
+
+    # Individual masks
+    for struct in selected:
+        if struct in panels:
+            mask_rgb = cv2.cvtColor(panels[struct], cv2.COLOR_BGR2RGB)
+            mask_display = visualization.resize_for_display(mask_rgb)
+            gallery_images.append((mask_display, config.STRUCTURES[struct]["label"]))
+
+    # Probability maps
+    for struct in selected:
+        prob_key = f"{struct}_prob"
+        if prob_key in panels:
+            prob_rgb = cv2.cvtColor(panels[prob_key], cv2.COLOR_BGR2RGB)
+            prob_display = visualization.resize_for_display(prob_rgb)
+            gallery_images.append((prob_display, f"{config.STRUCTURES[struct]['label']} (probability)"))
+
+    # Format results
+    results_text = visualization.format_results_table(results)
+    elapsed = time.time() - t0
+    results_text += f"\n\n**Processing time:** {elapsed:.1f}s | **Image size:** {w}x{h}"
+
+    # Save overlay for download
+    overlay_path = config.TEMP_DIR / "last_overlay.png"
+    cv2.imwrite(str(overlay_path), overlay_bgr)
+
+    # Save masks as TIFF for download
+    mask_paths = []
+    for struct in selected:
+        mask_path = config.TEMP_DIR / f"mask_{struct}.tif"
+        mask_u8 = (results[struct]["binary"].astype(np.uint8) * 255)
+        tifffile.imwrite(str(mask_path), mask_u8)
+        mask_paths.append(str(mask_path))
+
+    progress(1.0, desc="Done!")
+
+    download_files = [str(overlay_path)] + mask_paths
+
+    return gallery_images, results_text, download_files
+
+
+def create_app():
+    """Build the Gradio application."""
+    _ensure_dirs()
+
+    available = _check_models()
+    model_status_parts = []
+    for struct, is_available in available.items():
+        icon = "&#9989;" if is_available else "&#10060;"
+        label = config.STRUCTURES[struct]["label"]
+        model_status_parts.append(f"{icon} {label}")
+    model_status = " &nbsp;|&nbsp; ".join(model_status_parts)
+
+    css = """
+    :root {
+        --color-accent: #2563eb;
+        --color-accent-soft: #dbeafe;
+    }
+    .model-status { font-size: 0.9em; padding: 8px 12px; background: #f8fafc; border-radius: 6px; }
+    .header-row { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
+    footer { display: none !important; }
+    """
+
+    with gr.Blocks(
+        title="SynapseNet-Retina",
+        css=css,
+        theme=gr.themes.Soft(primary_hue="blue"),
+    ) as app:
+        gr.HTML("""
+        <div class="header-row">
+            <h1 style="margin:0;">SynapseNet-Retina</h1>
+            <span style="color:#64748b; font-size:1.1em;">Retinal EM Synapse Segmentation</span>
+        </div>
+        """)
+
+        gr.HTML(f'<div class="model-status"><b>Models:</b> {model_status}</div>')
+
+        with gr.Row():
+            # Left column: inputs
+            with gr.Column(scale=1):
+                file_input = gr.File(
+                    label="Upload EM Image",
+                    file_types=[".tif", ".tiff", ".png", ".jpg"],
+                    type="filepath",
+                )
+
+                structures_input = gr.CheckboxGroup(
+                    choices=["Synaptic Vesicles", "Mitochondria", "Presynaptic Membrane"],
+                    value=["Synaptic Vesicles", "Mitochondria", "Presynaptic Membrane"],
+                    label="Structures to Segment",
+                )
+
+                threshold_input = gr.Slider(
+                    minimum=0.1,
+                    maximum=0.9,
+                    value=0.5,
+                    step=0.05,
+                    label="Prediction Threshold",
+                    info="Lower = more sensitive (more detections), Higher = more specific (fewer false positives)",
+                )
+
+                run_btn = gr.Button("Run Segmentation", variant="primary", size="lg")
+
+                gr.HTML(f'<div style="margin-top:12px;">{_gpu_status_html()}</div>')
+
+            # Right column: results
+            with gr.Column(scale=2):
+                gallery = gr.Gallery(
+                    label="Results",
+                    columns=2,
+                    height=500,
+                    object_fit="contain",
+                )
+
+                results_md = gr.Markdown(label="Metrics")
+
+                download_files = gr.File(
+                    label="Download Results",
+                    file_count="multiple",
+                    interactive=False,
+                )
+
+        # Wire up the button
+        run_btn.click(
+            fn=process_image,
+            inputs=[file_input, structures_input, threshold_input],
+            outputs=[gallery, results_md, download_files],
+        )
+
+    return app
+
+
+def main():
+    app = create_app()
+
+    # Launch with simple password auth
+    app.launch(
+        server_name=config.APP_HOST,
+        server_port=config.APP_PORT,
+        share=False,
+        show_error=True,
+        auth=("thiru", config.AUTH_PASSWORD),
+        auth_message="SynapseNet-Retina — Enter credentials to access. Contact the lab for access.",
+    )
+
+
+if __name__ == "__main__":
+    main()

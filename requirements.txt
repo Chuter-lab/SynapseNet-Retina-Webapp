@@ -1,0 +1,9 @@
+gradio>=4.0
+torch>=2.0
+torch-em>=0.7
+numpy
+opencv-python-headless
+tifffile
+scikit-image
+Pillow
+matplotlib
