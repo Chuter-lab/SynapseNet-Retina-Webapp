@@ -314,14 +314,15 @@ _onload_js = """
 
 
 def main():
-    from starlette.responses import JSONResponse
+    from starlette.responses import JSONResponse, Response
     from starlette.routing import Route
 
     app = create_app()
 
-    favicon = str(STATIC_DIR / "favicon.ico")
+    favicon_path = STATIC_DIR / "favicon.ico"
+    favicon_bytes = favicon_path.read_bytes() if favicon_path.exists() else b""
 
-    # Launch with simple password auth (non-blocking so we can patch routes)
+    # Launch (non-blocking so we can patch routes after)
     app.launch(
         server_name=config.APP_HOST,
         server_port=config.APP_PORT,
@@ -330,15 +331,19 @@ def main():
         auth=config.AUTH_CREDENTIALS,
         auth_message="THIRU — TEM Histological Image Recognition for Ultrastructure. Enter credentials to access.",
         pwa=False,
-        favicon_path=favicon if Path(favicon).exists() else None,
         prevent_thread_lock=True,
     )
 
-    # Override Gradio's manifest.json after launch (disables "Open in app")
+    # Override Gradio's manifest.json (disables "Open in app")
     async def empty_manifest(request):
         return JSONResponse({})
 
+    # Override Gradio's favicon.ico with our own
+    async def serve_favicon(request):
+        return Response(content=favicon_bytes, media_type="image/x-icon")
+
     app.app.router.routes.insert(0, Route("/manifest.json", empty_manifest))
+    app.app.router.routes.insert(0, Route("/favicon.ico", serve_favicon))
 
     # Block the main thread
     import threading
