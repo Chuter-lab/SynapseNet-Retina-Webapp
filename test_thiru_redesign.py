@@ -156,11 +156,11 @@ def run_test():
         for info in toggle_info:
             log(f"  Toggle {info['index']}: '{info['label']}' checked={info['checked']}", results)
 
-        if toggle_count == 3:
-            log("  PASS: All 3 toggle checkboxes found", results)
+        if toggle_count == 2:
+            log("  PASS: All 2 toggle checkboxes found", results)
             passed += 1
         else:
-            log(f"  FAIL: Expected 3, found {toggle_count}", results)
+            log(f"  FAIL: Expected 2, found {toggle_count}", results)
             failed += 1
 
         # ===================== TOGGLE OVERLAY =====================
@@ -168,7 +168,7 @@ def run_test():
         log("TEST 6: Toggle checkboxes update overlay", results)
 
         toggle_ok = True
-        for i in range(min(toggle_count, 3)):
+        for i in range(min(toggle_count, 2)):
             label = toggle_info[i]["label"] if i < len(toggle_info) else f"toggle_{i}"
 
             # Get overlay image src before
@@ -256,10 +256,8 @@ def run_test():
         html = page.content()
         expected_files = [
             "last_overlay.png",
-            "mask_vesicles.tif",
             "mask_mitochondria.tif",
             "mask_membrane.tif",
-            "prob_vesicles.tif",
             "prob_mitochondria.tif",
             "prob_membrane.tif",
             "metrics.csv",
@@ -272,7 +270,7 @@ def run_test():
         for f in missing_f:
             log(f"  Missing: {f}", results)
 
-        if len(found_f) >= 7:
+        if len(found_f) >= 5:
             log(f"  PASS: {len(found_f)}/{len(expected_files)} files", results)
             passed += 1
         else:

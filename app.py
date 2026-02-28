@@ -1,7 +1,7 @@
 """THIRU — TEM Histological Image Recognition for Ultrastructure.
 
 Gradio-based interface for retinal EM synapse segmentation.
-Segments synaptic vesicles, mitochondria, and presynaptic membrane.
+Segments mitochondria and presynaptic membrane.
 """
 import gradio as gr
 import numpy as np
@@ -75,7 +75,6 @@ def process_image(file, structures, threshold, progress=gr.Progress()):
 
     # Parse selected structures
     struct_map = {
-        "Synaptic Vesicles": "vesicles",
         "Mitochondria": "mitochondria",
         "Presynaptic Membrane": "membrane",
     }
@@ -161,7 +160,6 @@ def process_image(file, structures, threshold, progress=gr.Progress()):
     state = {"selected": selected, "session_id": session_id}
 
     # Default checkboxes: all True
-    show_ves = "vesicles" in selected
     show_mito = "mitochondria" in selected
     show_mem = "membrane" in selected
 
@@ -171,13 +169,12 @@ def process_image(file, structures, threshold, progress=gr.Progress()):
         gallery_images,
         metrics_text,
         download_files,
-        gr.update(value=show_ves, visible="vesicles" in selected),
         gr.update(value=show_mito, visible="mitochondria" in selected),
         gr.update(value=show_mem, visible="membrane" in selected),
     )
 
 
-def regenerate_overlay(state, show_ves, show_mito, show_mem):
+def regenerate_overlay(state, show_mito, show_mem):
     """Regenerate overlay with toggled structure visibility."""
     if state is None:
         return None
@@ -199,8 +196,6 @@ def regenerate_overlay(state, show_ves, show_mito, show_mem):
             results[struct] = {"binary": np.load(str(bin_path))}
 
     show_structures = []
-    if show_ves and "vesicles" in results:
-        show_structures.append("vesicles")
     if show_mito and "mitochondria" in results:
         show_structures.append("mitochondria")
     if show_mem and "membrane" in results:
@@ -288,8 +283,8 @@ def create_app():
                 )
 
                 structures_input = gr.CheckboxGroup(
-                    choices=["Synaptic Vesicles", "Mitochondria", "Presynaptic Membrane"],
-                    value=["Synaptic Vesicles", "Mitochondria", "Presynaptic Membrane"],
+                    choices=["Mitochondria", "Presynaptic Membrane"],
+                    value=["Mitochondria", "Presynaptic Membrane"],
                     label="Structures to Segment",
                 )
 
@@ -319,10 +314,6 @@ def create_app():
 
                 # Layer toggle checkboxes
                 with gr.Row():
-                    cb_vesicles = gr.Checkbox(
-                        label="Vesicles", value=True,
-                        elem_id="toggle_vesicles",
-                    )
                     cb_mitochondria = gr.Checkbox(
                         label="Mitochondria", value=True,
                         elem_id="toggle_mitochondria",
@@ -360,19 +351,13 @@ def create_app():
                 gallery,
                 results_md,
                 download_files,
-                cb_vesicles,
                 cb_mitochondria,
                 cb_membrane,
             ],
         )
 
         # Wire up layer toggle checkboxes
-        toggle_inputs = [state, cb_vesicles, cb_mitochondria, cb_membrane]
-        cb_vesicles.change(
-            fn=regenerate_overlay,
-            inputs=toggle_inputs,
-            outputs=[overlay_image],
-        )
+        toggle_inputs = [state, cb_mitochondria, cb_membrane]
         cb_mitochondria.change(
             fn=regenerate_overlay,
             inputs=toggle_inputs,

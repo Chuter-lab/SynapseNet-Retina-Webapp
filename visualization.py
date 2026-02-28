@@ -106,8 +106,8 @@ def compute_morphometrics(results, image_shape):
             m["max_area"] = int(np.max(areas))
             m["std_area"] = round(float(np.std(areas)), 2)
 
-            # Circularity and aspect ratio for vesicles and mitochondria
-            if struct_name in ("vesicles", "mitochondria"):
+            # Circularity and aspect ratio for mitochondria
+            if struct_name == "mitochondria":
                 circularities = []
                 aspect_ratios = []
                 for p in props:
@@ -128,10 +128,6 @@ def compute_morphometrics(results, image_shape):
                 perimeters = [p.perimeter for p in props]
                 m["total_perimeter"] = round(float(np.sum(perimeters)), 2)
 
-            # Vesicle density (count per megapixel)
-            if struct_name == "vesicles":
-                mpx = total_pixels / 1e6
-                m["density_per_mpx"] = round(n_inst / mpx, 2) if mpx > 0 else 0.0
         else:
             m["mean_area"] = 0.0
             m["min_area"] = 0
@@ -139,30 +135,6 @@ def compute_morphometrics(results, image_shape):
             m["std_area"] = 0.0
 
         metrics[struct_name] = m
-
-    # Cross-structure metrics
-    cross = {}
-    if "vesicles" in results and "membrane" in results:
-        membrane_mask = results["membrane"]["binary"]
-        vesicle_instances = results["vesicles"]["instances"]
-
-        # Count vesicles within membrane-defined terminal
-        if np.any(membrane_mask) and vesicle_instances.max() > 0:
-            # Find vesicle labels that overlap with membrane region
-            vesicle_labels_in_terminal = np.unique(vesicle_instances[membrane_mask])
-            vesicle_labels_in_terminal = vesicle_labels_in_terminal[vesicle_labels_in_terminal > 0]
-            cross["vesicles_in_terminal"] = int(len(vesicle_labels_in_terminal))
-
-            # Density within terminal
-            terminal_area = int(np.sum(membrane_mask))
-            if terminal_area > 0:
-                terminal_mpx = terminal_area / 1e6
-                cross["vesicle_density_in_terminal"] = round(
-                    cross["vesicles_in_terminal"] / terminal_mpx, 2
-                ) if terminal_mpx > 0 else 0.0
-
-    if cross:
-        metrics["_cross"] = cross
 
     return metrics
 
@@ -178,7 +150,7 @@ def format_morphometrics_markdown(metrics):
     """
     sections = []
 
-    for struct_name in ("vesicles", "mitochondria", "membrane"):
+    for struct_name in ("mitochondria", "membrane"):
         if struct_name not in metrics:
             continue
         m = metrics[struct_name]
@@ -202,22 +174,7 @@ def format_morphometrics_markdown(metrics):
             rows.append(f"| Mean aspect ratio | {m['mean_aspect_ratio']:.4f} |")
         if "total_perimeter" in m:
             rows.append(f"| Total perimeter (px) | {m['total_perimeter']:.1f} |")
-        if "density_per_mpx" in m:
-            rows.append(f"| Density (per Mpx) | {m['density_per_mpx']:.1f} |")
 
-        sections.append("\n".join(rows))
-
-    # Cross-structure metrics
-    if "_cross" in metrics:
-        cross = metrics["_cross"]
-        rows = []
-        rows.append("**Cross-structure**\n")
-        rows.append("| Metric | Value |")
-        rows.append("|--------|-------|")
-        if "vesicles_in_terminal" in cross:
-            rows.append(f"| Vesicles in terminal | {cross['vesicles_in_terminal']} |")
-        if "vesicle_density_in_terminal" in cross:
-            rows.append(f"| Vesicle density in terminal (per Mpx) | {cross['vesicle_density_in_terminal']:.1f} |")
         sections.append("\n".join(rows))
 
     return "\n\n".join(sections)
@@ -239,15 +196,11 @@ def export_metrics_csv(metrics, output_path):
         writer = csv.writer(f)
         writer.writerow(["Structure", "Metric", "Value"])
 
-        for struct_name in ("vesicles", "mitochondria", "membrane"):
+        for struct_name in ("mitochondria", "membrane"):
             if struct_name not in metrics:
                 continue
             label = config.STRUCTURES[struct_name]["label"]
             for metric_name, value in metrics[struct_name].items():
                 writer.writerow([label, metric_name, value])
-
-        if "_cross" in metrics:
-            for metric_name, value in metrics["_cross"].items():
-                writer.writerow(["Cross-structure", metric_name, value])
 
     return output_path

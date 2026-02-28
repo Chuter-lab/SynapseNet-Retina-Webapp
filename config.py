@@ -11,7 +11,6 @@ LOG_DIR = DATA_ROOT / "logs"
 
 # Model checkpoints (populated by deploy script)
 CHECKPOINTS = {
-    "vesicles": MODELS_DIR / "retina_vesicles_best.pt",
     "mitochondria": MODELS_DIR / "retina_mitochondria_best.pt",
     "membrane": MODELS_DIR / "retina_membrane_best.pt",
 }
@@ -34,7 +33,6 @@ GPU_ID = 0
 # Structures and colors (BGR for OpenCV)
 # Per-structure thresholds from evaluation on retina validation data
 STRUCTURES = {
-    "vesicles": {"color": (0, 255, 255), "label": "Synaptic Vesicles", "min_area": 25, "threshold": 0.5},
     "mitochondria": {"color": (0, 255, 0), "label": "Mitochondria", "min_area": 5000, "threshold": 0.35},
     "membrane": {"color": (255, 0, 0), "label": "Presynaptic Membrane", "min_area": 50000, "threshold": 0.4},
 }
