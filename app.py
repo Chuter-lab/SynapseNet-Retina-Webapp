@@ -281,6 +281,9 @@ def create_app():
         </div>
         """)
 
+        # Replace Gradio's favicon and remove PWA manifest after page loads
+        app.load(fn=None, js=_onload_js)
+
     return app
 
 
@@ -317,9 +320,6 @@ def main():
     app = create_app()
 
     favicon = str(STATIC_DIR / "favicon.ico")
-
-    # Replace Gradio's favicon and remove PWA manifest after page loads
-    app.load(fn=None, js=_onload_js)
 
     # Override Gradio's manifest.json to return empty (disables "Open in app")
     async def empty_manifest(request):
