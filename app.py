@@ -334,6 +334,7 @@ def main():
         auth_message="THIRU — TEM Histological Image Recognition for Ultrastructure. Enter credentials to access.",
         pwa=False,
         prevent_thread_lock=True,
+        allowed_paths=[str(config.TEMP_DIR), str(config.UPLOAD_DIR)],
     )
 
     # Override Gradio's manifest.json (disables "Open in app")
