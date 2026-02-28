@@ -7,11 +7,9 @@ import gradio as gr
 import numpy as np
 import cv2
 import tifffile
-import tempfile
 import time
 from pathlib import Path
 from PIL import Image
-import io
 import torch
 
 import config
@@ -104,7 +102,7 @@ def process_image(file, structures, threshold, progress=gr.Progress()):
 
     progress(0.8, desc="Creating visualization...")
 
-    # Create overlay
+    # Create overlay (all structures on)
     overlay_bgr = visualization.create_overlay(img_gray, results)
     overlay_rgb = cv2.cvtColor(overlay_bgr, cv2.COLOR_BGR2RGB)
     overlay_display = visualization.resize_for_display(overlay_rgb)
@@ -112,49 +110,91 @@ def process_image(file, structures, threshold, progress=gr.Progress()):
     # Create individual structure panels
     panels = visualization.create_panel(img_gray, results)
 
-    # Build gallery images
+    # Build gallery images — binary masks only (no prob maps)
     gallery_images = []
-
-    # Overlay
-    gallery_images.append((overlay_display, "Overlay"))
-
-    # Individual masks
     for struct in selected:
         if struct in panels:
             mask_rgb = cv2.cvtColor(panels[struct], cv2.COLOR_BGR2RGB)
             mask_display = visualization.resize_for_display(mask_rgb)
             gallery_images.append((mask_display, config.STRUCTURES[struct]["label"]))
 
-    # Probability maps
-    for struct in selected:
-        prob_key = f"{struct}_prob"
-        if prob_key in panels:
-            prob_rgb = cv2.cvtColor(panels[prob_key], cv2.COLOR_BGR2RGB)
-            prob_display = visualization.resize_for_display(prob_rgb)
-            gallery_images.append((prob_display, f"{config.STRUCTURES[struct]['label']} (probability)"))
-
-    # Format results
-    results_text = visualization.format_results_table(results)
+    # Compute morphometric metrics
+    metrics = visualization.compute_morphometrics(results, img_gray.shape)
     elapsed = time.time() - t0
-    results_text += f"\n\n**Processing time:** {elapsed:.1f}s | **Image size:** {w}x{h}"
+    metrics_text = visualization.format_morphometrics_markdown(metrics)
+    metrics_text += f"\n\n**Processing time:** {elapsed:.1f}s | **Image size:** {w}x{h}"
 
     # Save overlay for download
     overlay_path = config.TEMP_DIR / "last_overlay.png"
     cv2.imwrite(str(overlay_path), overlay_bgr)
 
     # Save masks as TIFF for download
-    mask_paths = []
+    download_files = [str(overlay_path)]
     for struct in selected:
         mask_path = config.TEMP_DIR / f"mask_{struct}.tif"
         mask_u8 = (results[struct]["binary"].astype(np.uint8) * 255)
         tifffile.imwrite(str(mask_path), mask_u8)
-        mask_paths.append(str(mask_path))
+        download_files.append(str(mask_path))
+
+    # Save probability maps as TIFF for download
+    for struct in selected:
+        prob_path = config.TEMP_DIR / f"prob_{struct}.tif"
+        tifffile.imwrite(str(prob_path), results[struct]["prob_map"])
+        download_files.append(str(prob_path))
+
+    # Export metrics CSV
+    csv_path = config.TEMP_DIR / "metrics.csv"
+    visualization.export_metrics_csv(metrics, csv_path)
+    download_files.append(str(csv_path))
 
     progress(1.0, desc="Done!")
 
-    download_files = [str(overlay_path)] + mask_paths
+    # State for overlay re-rendering
+    state = {
+        "image_gray": img_gray,
+        "results": results,
+        "selected": selected,
+    }
 
-    return gallery_images, results_text, download_files
+    # Default checkboxes: all True
+    show_ves = "vesicles" in selected
+    show_mito = "mitochondria" in selected
+    show_mem = "membrane" in selected
+
+    return (
+        state,
+        overlay_display,
+        gallery_images,
+        metrics_text,
+        download_files,
+        gr.update(value=show_ves, visible="vesicles" in selected),
+        gr.update(value=show_mito, visible="mitochondria" in selected),
+        gr.update(value=show_mem, visible="membrane" in selected),
+    )
+
+
+def regenerate_overlay(state, show_ves, show_mito, show_mem):
+    """Regenerate overlay with toggled structure visibility."""
+    if state is None:
+        return None
+
+    image_gray = state["image_gray"]
+    results = state["results"]
+
+    show_structures = []
+    if show_ves and "vesicles" in results:
+        show_structures.append("vesicles")
+    if show_mito and "mitochondria" in results:
+        show_structures.append("mitochondria")
+    if show_mem and "membrane" in results:
+        show_structures.append("membrane")
+
+    overlay_bgr = visualization.create_overlay(
+        image_gray, results, show_structures=show_structures
+    )
+    overlay_rgb = cv2.cvtColor(overlay_bgr, cv2.COLOR_BGR2RGB)
+    overlay_display = visualization.resize_for_display(overlay_rgb)
+    return overlay_display
 
 
 def _load_logo_svg():
@@ -252,26 +292,78 @@ def create_app():
 
             # Right column: results
             with gr.Column(scale=2):
+                # State for overlay re-rendering
+                state = gr.State(value=None)
+
+                # Overlay image
+                overlay_image = gr.Image(
+                    label="Overlay",
+                    interactive=False,
+                    show_download_button=True,
+                )
+
+                # Layer toggle checkboxes
+                with gr.Row():
+                    cb_vesicles = gr.Checkbox(
+                        label="Vesicles", value=True, visible=True
+                    )
+                    cb_mitochondria = gr.Checkbox(
+                        label="Mitochondria", value=True, visible=True
+                    )
+                    cb_membrane = gr.Checkbox(
+                        label="Membrane", value=True, visible=True
+                    )
+
+                # Binary mask gallery (no prob maps)
                 gallery = gr.Gallery(
-                    label="Results",
-                    columns=2,
-                    height=500,
+                    label="Binary Masks",
+                    columns=3,
+                    height=250,
                     object_fit="contain",
                 )
 
-                results_md = gr.Markdown(label="Metrics")
+                # Morphometric analysis
+                results_md = gr.Markdown(label="Morphometric Analysis")
 
+                # Downloads
                 download_files = gr.File(
                     label="Download Results",
                     file_count="multiple",
                     interactive=False,
                 )
 
-        # Wire up the button
+        # Wire up the run button
         run_btn.click(
             fn=process_image,
             inputs=[file_input, structures_input, threshold_input],
-            outputs=[gallery, results_md, download_files],
+            outputs=[
+                state,
+                overlay_image,
+                gallery,
+                results_md,
+                download_files,
+                cb_vesicles,
+                cb_mitochondria,
+                cb_membrane,
+            ],
+        )
+
+        # Wire up layer toggle checkboxes
+        toggle_inputs = [state, cb_vesicles, cb_mitochondria, cb_membrane]
+        cb_vesicles.change(
+            fn=regenerate_overlay,
+            inputs=toggle_inputs,
+            outputs=[overlay_image],
+        )
+        cb_mitochondria.change(
+            fn=regenerate_overlay,
+            inputs=toggle_inputs,
+            outputs=[overlay_image],
+        )
+        cb_membrane.change(
+            fn=regenerate_overlay,
+            inputs=toggle_inputs,
+            outputs=[overlay_image],
         )
 
         gr.HTML("""
