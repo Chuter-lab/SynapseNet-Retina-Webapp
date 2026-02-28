@@ -1,4 +1,4 @@
-"""SynapseNet-Retina Web Application.
+"""THIRU — TEM Histological Image Recognition for Ultrastructure.
 
 Gradio-based interface for retinal EM synapse segmentation.
 Segments synaptic vesicles, mitochondria, and presynaptic membrane.
@@ -180,14 +180,14 @@ def create_app():
     """
 
     with gr.Blocks(
-        title="SynapseNet-Retina",
+        title="THIRU",
         css=css,
         theme=gr.themes.Soft(primary_hue="blue"),
     ) as app:
         gr.HTML("""
         <div class="header-row">
-            <h1 style="margin:0;">SynapseNet-Retina</h1>
-            <span style="color:#64748b; font-size:1.1em;">Retinal EM Synapse Segmentation</span>
+            <h1 style="margin:0;">THIRU</h1>
+            <span style="color:#64748b; font-size:1.1em;">TEM Histological Image Recognition for Ultrastructure</span>
         </div>
         """)
 
@@ -245,6 +245,13 @@ def create_app():
             outputs=[gallery, results_md, download_files],
         )
 
+        gr.HTML("""
+        <div style="text-align:center; padding:16px 0 8px; margin-top:24px;
+                    border-top:1px solid #e2e8f0; color:#94a3b8; font-size:0.85em;">
+            Lead Developer: Benton Chuter, MD, MS
+        </div>
+        """)
+
     return app
 
 
@@ -258,7 +265,7 @@ def main():
         share=False,
         show_error=True,
         auth=config.AUTH_CREDENTIALS,
-        auth_message="SynapseNet-Retina — Enter credentials to access. Contact the lab for access.",
+        auth_message="THIRU — TEM Histological Image Recognition for Ultrastructure. Enter credentials to access.",
         pwa=False,
     )
 
