@@ -284,10 +284,48 @@ def create_app():
     return app
 
 
+# JS to replace Gradio's default favicon and remove PWA manifest
+_onload_js = """
+() => {
+    function setFavicon() {
+        document.querySelectorAll('link[rel*="icon"]').forEach(el => el.remove());
+        const link = document.createElement('link');
+        link.rel = 'icon';
+        link.type = 'image/x-icon';
+        link.href = '/favicon.ico';
+        document.head.appendChild(link);
+    }
+    function removeManifest() {
+        document.querySelectorAll('link[rel="manifest"]').forEach(el => el.remove());
+    }
+    setFavicon();
+    removeManifest();
+    // Watch for Gradio re-injecting its favicon or manifest
+    new MutationObserver(() => {
+        const badFav = document.querySelector('link[rel*="icon"]:not([href="/favicon.ico"])');
+        const manifest = document.querySelector('link[rel="manifest"]');
+        if (badFav || manifest) { setFavicon(); removeManifest(); }
+    }).observe(document.head, { childList: true });
+}
+"""
+
+
 def main():
+    from starlette.responses import JSONResponse
+    from starlette.routing import Route
+
     app = create_app()
 
     favicon = str(STATIC_DIR / "favicon.ico")
+
+    # Replace Gradio's favicon and remove PWA manifest after page loads
+    app.load(fn=None, js=_onload_js)
+
+    # Override Gradio's manifest.json to return empty (disables "Open in app")
+    async def empty_manifest(request):
+        return JSONResponse({})
+
+    app.app.router.routes.insert(0, Route("/manifest.json", empty_manifest))
 
     # Launch with simple password auth
     app.launch(
