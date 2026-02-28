@@ -18,6 +18,8 @@ import config
 import inference
 import visualization
 
+STATIC_DIR = Path(__file__).parent / "static"
+
 
 def _ensure_dirs():
     """Create required directories."""
@@ -155,6 +157,14 @@ def process_image(file, structures, threshold, progress=gr.Progress()):
     return gallery_images, results_text, download_files
 
 
+def _load_logo_svg():
+    """Load the THIRU logo SVG for inline embedding."""
+    svg_path = STATIC_DIR / "thiru_logo.svg"
+    if svg_path.exists():
+        return svg_path.read_text()
+    return None
+
+
 def create_app():
     """Build the Gradio application."""
     _ensure_dirs()
@@ -167,13 +177,17 @@ def create_app():
         model_status_parts.append(f"{icon} {label}")
     model_status = " &nbsp;|&nbsp; ".join(model_status_parts)
 
+    logo_svg = _load_logo_svg()
+
     css = """
     :root {
         --color-accent: #2563eb;
         --color-accent-soft: #dbeafe;
     }
     .model-status { font-size: 0.9em; padding: 8px 12px; background: #f8fafc; border-radius: 6px; }
-    .header-row { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
+    .thiru-header { text-align: center; margin-bottom: 8px; }
+    .thiru-header svg { max-height: 80px; width: auto; }
+    .thiru-subtitle { color: #64748b; font-size: 0.95em; margin-top: 4px; letter-spacing: 0.5px; }
     footer { display: none !important; }
     /* Hide Gradio PWA install banner */
     .pwa-install-container, .pwa-toast, [class*="pwa"] { display: none !important; }
@@ -184,12 +198,20 @@ def create_app():
         css=css,
         theme=gr.themes.Soft(primary_hue="blue"),
     ) as app:
-        gr.HTML("""
-        <div class="header-row">
-            <h1 style="margin:0;">THIRU</h1>
-            <span style="color:#64748b; font-size:1.1em;">TEM Histological Image Recognition for Ultrastructure</span>
-        </div>
-        """)
+        if logo_svg:
+            gr.HTML(f"""
+            <div class="thiru-header">
+                {logo_svg}
+                <div class="thiru-subtitle">TEM Histological Image Recognition for Ultrastructure</div>
+            </div>
+            """)
+        else:
+            gr.HTML("""
+            <div class="thiru-header">
+                <h1 style="margin:0;">THIRU</h1>
+                <div class="thiru-subtitle">TEM Histological Image Recognition for Ultrastructure</div>
+            </div>
+            """)
 
         gr.HTML(f'<div class="model-status"><b>Models:</b> {model_status}</div>')
 
@@ -258,6 +280,8 @@ def create_app():
 def main():
     app = create_app()
 
+    favicon = str(STATIC_DIR / "favicon.ico")
+
     # Launch with simple password auth
     app.launch(
         server_name=config.APP_HOST,
@@ -267,6 +291,7 @@ def main():
         auth=config.AUTH_CREDENTIALS,
         auth_message="THIRU — TEM Histological Image Recognition for Ultrastructure. Enter credentials to access.",
         pwa=False,
+        favicon_path=favicon if Path(favicon).exists() else None,
     )
 
 

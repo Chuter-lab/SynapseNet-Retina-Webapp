@@ -1,0 +1,111 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 320" width="1000" height="320">
+  <defs>
+    <linearGradient id="mitoOuter" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#142850;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#0A1A36;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="matrix" x1="0%" y1="0%" x2="50%" y2="100%">
+      <stop offset="0%" style="stop-color:#26537A;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#1B4463;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="cristaeL" x1="100%" y1="0%" x2="0%" y2="0%">
+      <stop offset="0%" style="stop-color:#5E9DC4;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#3D82AA;stop-opacity:0.7" />
+    </linearGradient>
+    <linearGradient id="cristaeR" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#5E9DC4;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#3D82AA;stop-opacity:0.7" />
+    </linearGradient>
+    <linearGradient id="textGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#1A1A2E;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#2C2C44;stop-opacity:1" />
+    </linearGradient>
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="1.5" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <filter id="textShadow">
+      <feDropShadow dx="0" dy="1" stdDeviation="1" flood-color="#000" flood-opacity="0.08"/>
+    </filter>
+  </defs>
+
+  <!-- Letter T -->
+  <g filter="url(#textShadow)">
+    <rect x="42" y="50" width="160" height="28" rx="3" fill="url(#textGrad)"/>
+    <rect x="99" y="50" width="28" height="200" rx="3" fill="url(#textGrad)"/>
+  </g>
+
+  <!-- Letter H -->
+  <g filter="url(#textShadow)">
+    <rect x="246" y="50" width="28" height="200" rx="3" fill="url(#textGrad)"/>
+    <rect x="246" y="132" width="120" height="28" rx="3" fill="url(#textGrad)"/>
+    <rect x="338" y="50" width="28" height="200" rx="3" fill="url(#textGrad)"/>
+  </g>
+
+  <!-- Letter I -->
+  <g filter="url(#textShadow)">
+    <rect x="414" y="50" width="100" height="28" rx="3" fill="url(#textGrad)"/>
+    <rect x="450" y="50" width="28" height="200" rx="3" fill="url(#textGrad)"/>
+    <rect x="414" y="222" width="100" height="28" rx="3" fill="url(#textGrad)"/>
+  </g>
+
+  <!-- Letter R -->
+  <g filter="url(#textShadow)">
+    <rect x="562" y="50" width="28" height="200" rx="3" fill="url(#textGrad)"/>
+    <path d="M562,50 L562,78 L674,78 Q702,78 702,98 Q702,132 674,132 L562,132 L562,160 L654,160 Q730,160 730,98 Q730,50 674,50 Z" fill="url(#textGrad)"/>
+    <polygon points="634,160 662,160 714,250 686,250" fill="url(#textGrad)"/>
+  </g>
+
+  <!-- Mitochondria U -->
+  <g filter="url(#glow)" transform="translate(764, 38)">
+
+    <!-- Solid matrix background filling ENTIRE interior of U shape -->
+    <path d="
+      M 0,0 L 0,160 C 0,218 40,250 88,250 C 136,250 176,218 176,160 L 176,0 L 144,0 L 144,160 C 144,200 120,224 88,224 C 56,224 32,200 32,160 L 32,0 Z
+    " fill="url(#matrix)"/>
+
+    <!-- Outer membrane border (darkest tone) -->
+    <path d="
+      M 0,0 L 0,160 C 0,218 40,250 88,250 C 136,250 176,218 176,160 L 176,0 L 176,0 L 162,0 L 162,160 C 162,210 130,238 88,238 C 46,238 14,210 14,160 L 14,0 Z
+    " fill="url(#mitoOuter)"/>
+    <path d="
+      M 32,0 L 32,160 C 32,200 56,224 88,224 C 120,224 144,200 144,160 L 144,0 L 158,0 L 158,160 C 158,206 126,234 88,234 C 50,234 18,206 18,160 L 18,0 Z
+    " fill="url(#mitoOuter)"/>
+
+    <!-- Matrix interior (mid tone) - solid fill of inner cavity -->
+    <path d="
+      M 32,0 L 32,160 C 32,200 56,224 88,224 C 120,224 144,200 144,160 L 144,0 Z
+    " fill="url(#matrix)"/>
+
+    <!-- Cristae left wall -->
+    <path d="M 32,18 C 52,16 78,22 82,38 C 86,54 66,62 32,58" fill="url(#cristaeL)"/>
+    <path d="M 32,68 C 56,65 82,72 86,90 C 90,106 68,114 32,110" fill="url(#cristaeL)"/>
+    <path d="M 32,120 C 54,117 78,124 82,140 C 85,154 64,162 36,164" fill="url(#cristaeL)"/>
+
+    <!-- Cristae right wall -->
+    <path d="M 144,26 C 124,23 98,30 94,46 C 90,62 110,70 144,66" fill="url(#cristaeR)"/>
+    <path d="M 144,78 C 120,75 96,82 92,98 C 88,114 108,122 144,118" fill="url(#cristaeR)"/>
+    <path d="M 144,130 C 122,127 98,134 94,148 C 91,160 110,168 138,170" fill="url(#cristaeR)"/>
+
+    <!-- Bottom cristae arches -->
+    <path d="M 38,178 C 50,204 68,218 88,218 C 108,218 126,204 138,178" fill="none" stroke="#5E9DC4" stroke-width="7" stroke-linecap="round" opacity="0.8"/>
+    <path d="M 48,174 C 58,194 72,206 88,206 C 104,206 118,194 128,174" fill="none" stroke="#4D8FB8" stroke-width="6" stroke-linecap="round" opacity="0.7"/>
+    <path d="M 58,170 C 66,186 76,194 88,194 C 100,194 110,186 118,170" fill="none" stroke="#3D82AA" stroke-width="5" stroke-linecap="round" opacity="0.6"/>
+
+    <!-- Matrix granules -->
+    <circle cx="58" cy="44" r="3" fill="#0A1A36" opacity="0.45"/>
+    <circle cx="118" cy="52" r="2.5" fill="#0A1A36" opacity="0.4"/>
+    <circle cx="88" cy="185" r="3.5" fill="#0A1A36" opacity="0.45"/>
+    <circle cx="65" cy="95" r="2.5" fill="#0A1A36" opacity="0.35"/>
+    <circle cx="110" cy="104" r="3" fill="#0A1A36" opacity="0.4"/>
+    <circle cx="98" cy="150" r="2.5" fill="#0A1A36" opacity="0.35"/>
+    <circle cx="72" cy="148" r="2" fill="#0A1A36" opacity="0.3"/>
+
+    <!-- Subtle inner membrane line -->
+    <path d="M 32,0 L 32,160 C 32,200 56,224 88,224 C 120,224 144,200 144,160 L 144,0" fill="none" stroke="#0A1A36" stroke-width="1.2" opacity="0.4"/>
+  </g>
+
+</svg>
