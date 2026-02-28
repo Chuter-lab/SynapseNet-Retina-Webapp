@@ -2,7 +2,7 @@
 import numpy as np
 import torch
 from unet import UNet2d
-from skimage.morphology import disk, binary_opening
+from skimage.morphology import disk, opening
 from skimage.measure import label as skimage_label
 import config
 
@@ -98,7 +98,7 @@ def postprocess(prob_map, structure, threshold=None):
 
     # Morphological opening
     selem = disk(2)
-    binary = binary_opening(binary, selem)
+    binary = opening(binary, selem)
 
     # Connected components and area filtering
     labeled = skimage_label(binary)
