@@ -294,8 +294,8 @@ _onload_js = """
         document.querySelectorAll('link[rel*="icon"]').forEach(el => el.remove());
         const link = document.createElement('link');
         link.rel = 'icon';
-        link.type = 'image/x-icon';
-        link.href = '/favicon.ico?v=2';
+        link.type = 'image/svg+xml';
+        link.href = '/favicon.svg?v=3';
         document.head.appendChild(link);
     }
     function removeManifest() {
@@ -305,7 +305,7 @@ _onload_js = """
     removeManifest();
     // Watch for Gradio re-injecting its favicon or manifest
     new MutationObserver(() => {
-        const badFav = document.querySelector('link[rel*="icon"]:not([href*="/favicon.ico"])');
+        const badFav = document.querySelector('link[rel*="icon"]:not([href*="/favicon.svg"])');
         const manifest = document.querySelector('link[rel="manifest"]');
         if (badFav || manifest) { setFavicon(); removeManifest(); }
     }).observe(document.head, { childList: true });
@@ -319,8 +319,10 @@ def main():
 
     app = create_app()
 
-    favicon_path = STATIC_DIR / "favicon.ico"
-    favicon_bytes = favicon_path.read_bytes() if favicon_path.exists() else b""
+    favicon_svg_path = STATIC_DIR / "favicon.svg"
+    favicon_svg_bytes = favicon_svg_path.read_bytes() if favicon_svg_path.exists() else b""
+    favicon_ico_path = STATIC_DIR / "favicon.ico"
+    favicon_ico_bytes = favicon_ico_path.read_bytes() if favicon_ico_path.exists() else b""
 
     # Launch (non-blocking so we can patch routes after)
     app.launch(
@@ -338,16 +340,25 @@ def main():
     async def empty_manifest(request):
         return JSONResponse({})
 
-    # Override Gradio's favicon.ico with our own
+    # Override Gradio's favicon with our SVG (preserves gradients/colors)
     async def serve_favicon(request):
         return Response(
-            content=favicon_bytes,
+            content=favicon_svg_bytes,
+            media_type="image/svg+xml",
+            headers={"Cache-Control": "no-cache, must-revalidate", "CDN-Cache-Control": "no-store"},
+        )
+
+    # Also serve ICO fallback for older browsers
+    async def serve_favicon_ico(request):
+        return Response(
+            content=favicon_ico_bytes,
             media_type="image/x-icon",
             headers={"Cache-Control": "no-cache, must-revalidate", "CDN-Cache-Control": "no-store"},
         )
 
     app.app.router.routes.insert(0, Route("/manifest.json", empty_manifest))
-    app.app.router.routes.insert(0, Route("/favicon.ico", serve_favicon))
+    app.app.router.routes.insert(0, Route("/favicon.svg", serve_favicon))
+    app.app.router.routes.insert(0, Route("/favicon.ico", serve_favicon_ico))
 
     # Block the main thread
     import threading
