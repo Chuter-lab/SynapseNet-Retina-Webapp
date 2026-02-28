@@ -175,6 +175,8 @@ def create_app():
     .model-status { font-size: 0.9em; padding: 8px 12px; background: #f8fafc; border-radius: 6px; }
     .header-row { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
     footer { display: none !important; }
+    /* Hide Gradio PWA install banner */
+    .pwa-install-container, .pwa-toast, [class*="pwa"] { display: none !important; }
     """
 
     with gr.Blocks(
@@ -255,8 +257,9 @@ def main():
         server_port=config.APP_PORT,
         share=False,
         show_error=True,
-        auth=("thiru", config.AUTH_PASSWORD),
+        auth=config.AUTH_CREDENTIALS,
         auth_message="SynapseNet-Retina — Enter credentials to access. Contact the lab for access.",
+        pwa=False,
     )
 
 

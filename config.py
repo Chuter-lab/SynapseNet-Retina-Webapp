@@ -45,5 +45,8 @@ APP_HOST = "0.0.0.0"
 APP_PORT = 7861
 MAX_DISPLAY_SIZE = 2048  # Resize for Gradio display
 
-# Auth
-AUTH_PASSWORD = "jablonskilab2026"  # Simple shared password gate
+# Auth — list of (username, password) tuples
+AUTH_CREDENTIALS = [
+    ("bchuter", "Thiru2026!"),
+    ("thiru", "Thiru2026!"),
+]
