@@ -2,7 +2,6 @@
 import numpy as np
 import torch
 from unet import UNet2d
-from pathlib import Path
 from skimage.morphology import disk, binary_opening
 from skimage.measure import label as skimage_label
 import config
