@@ -317,13 +317,16 @@ def create_app():
                 # Layer toggle checkboxes
                 with gr.Row():
                     cb_vesicles = gr.Checkbox(
-                        label="Vesicles", value=True, visible=True
+                        label="Vesicles", value=True, visible=True,
+                        elem_id="toggle_vesicles",
                     )
                     cb_mitochondria = gr.Checkbox(
-                        label="Mitochondria", value=True, visible=True
+                        label="Mitochondria", value=True, visible=True,
+                        elem_id="toggle_mitochondria",
                     )
                     cb_membrane = gr.Checkbox(
-                        label="Membrane", value=True, visible=True
+                        label="Membrane", value=True, visible=True,
+                        elem_id="toggle_membrane",
                     )
 
                 # Binary mask gallery (no prob maps)
