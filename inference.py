@@ -89,7 +89,8 @@ def tiled_inference(model, img_norm, device, patch_size=256, has_sigmoid=False, 
 def postprocess(prob_map, structure, threshold=None):
     """Threshold, morphological cleanup, and instance labeling."""
     if threshold is None:
-        threshold = config.DEFAULT_THRESHOLD
+        # Use per-structure optimal threshold if available, else global default
+        threshold = config.STRUCTURES.get(structure, {}).get("threshold", config.DEFAULT_THRESHOLD)
 
     binary = prob_map > threshold
     struct_cfg = config.STRUCTURES[structure]

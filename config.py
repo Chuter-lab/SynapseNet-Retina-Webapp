@@ -32,10 +32,11 @@ TILE_OVERLAP = 32
 GPU_ID = 0
 
 # Structures and colors (BGR for OpenCV)
+# Per-structure thresholds from evaluation on retina validation data
 STRUCTURES = {
-    "vesicles": {"color": (0, 255, 255), "label": "Synaptic Vesicles", "min_area": 25},
-    "mitochondria": {"color": (0, 255, 0), "label": "Mitochondria", "min_area": 5000},
-    "membrane": {"color": (255, 0, 0), "label": "Presynaptic Membrane", "min_area": 50000},
+    "vesicles": {"color": (0, 255, 255), "label": "Synaptic Vesicles", "min_area": 25, "threshold": 0.5},
+    "mitochondria": {"color": (0, 255, 0), "label": "Mitochondria", "min_area": 5000, "threshold": 0.35},
+    "membrane": {"color": (255, 0, 0), "label": "Presynaptic Membrane", "min_area": 50000, "threshold": 0.4},
 }
 
 # Overlay

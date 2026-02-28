@@ -97,9 +97,10 @@ def process_image(file, structures, threshold, progress=gr.Progress()):
     h, w = img_gray.shape
     progress(0.2, desc=f"Image loaded: {w}x{h}")
 
-    # Run segmentation
+    # Run segmentation (threshold=0 means use per-structure optimal)
     progress(0.3, desc="Running segmentation...")
-    results = inference.segment(img_gray, structures=selected, threshold=threshold)
+    seg_threshold = None if threshold == 0.0 else threshold
+    results = inference.segment(img_gray, structures=selected, threshold=seg_threshold)
 
     progress(0.8, desc="Creating visualization...")
 
@@ -293,12 +294,12 @@ def create_app():
                 )
 
                 threshold_input = gr.Slider(
-                    minimum=0.1,
+                    minimum=0.0,
                     maximum=0.9,
-                    value=0.5,
+                    value=0.0,
                     step=0.05,
                     label="Prediction Threshold",
-                    info="Lower = more sensitive (more detections), Higher = more specific (fewer false positives)",
+                    info="0 = use per-structure optimal thresholds (recommended). Otherwise: lower = more sensitive, higher = more specific.",
                 )
 
                 run_btn = gr.Button("Run Segmentation", variant="primary", size="lg")
