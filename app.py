@@ -299,7 +299,6 @@ def create_app():
                 overlay_image = gr.Image(
                     label="Overlay",
                     interactive=False,
-                    show_download_button=True,
                 )
 
                 # Layer toggle checkboxes
