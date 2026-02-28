@@ -14,11 +14,11 @@ import sys
 import time
 from playwright.sync_api import sync_playwright
 
-URL = "https://thiru.chuterlab.com/"
-USERNAME = "bchuter"
-PASSWORD = "Thiru2026!"
-TEST_IMAGE = "/Users/bento/Downloads/THIRU_test_crop_raw.png"
-DOWNLOAD_DIR = "/Users/bento/Downloads"
+URL = os.environ.get("THIRU_URL", "https://thiru.chuterlab.com/")
+USERNAME = os.environ.get("THIRU_USER", "")
+PASSWORD = os.environ.get("THIRU_PASS", "")
+TEST_IMAGE = os.environ.get("THIRU_TEST_IMAGE", "/Users/bento/Downloads/THIRU_test_crop_raw.png")
+DOWNLOAD_DIR = os.environ.get("THIRU_DOWNLOAD_DIR", "/Users/bento/Downloads")
 RESULTS_FILE = os.path.join(DOWNLOAD_DIR, "thiru_test_results.txt")
 
 SEG_TIMEOUT = 180_000
@@ -230,7 +230,7 @@ def run_test():
 
         # ===================== DOWNLOADS =====================
         log("=" * 60, results)
-        log("TEST 10: Download files", results)
+        log("TEST 9: Download files", results)
 
         html = page.content()
         expected_files = [

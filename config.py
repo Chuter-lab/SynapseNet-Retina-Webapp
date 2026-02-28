@@ -1,4 +1,5 @@
 """Configuration for SynapseNet-Retina webapp."""
+import os
 from pathlib import Path
 
 # Paths
@@ -45,8 +46,17 @@ APP_HOST = "0.0.0.0"
 APP_PORT = 7861
 MAX_DISPLAY_SIZE = 2048  # Resize for Gradio display
 
-# Auth — list of (username, password) tuples
-AUTH_CREDENTIALS = [
-    ("bchuter", "Thiru2026!"),
-    ("thiru", "Thiru2026!"),
-]
+# Auth — loaded from THIRU_AUTH env var: "user1:pass1,user2:pass2"
+def _parse_auth():
+    auth_str = os.environ.get("THIRU_AUTH", "")
+    if not auth_str:
+        return None
+    pairs = []
+    for entry in auth_str.split(","):
+        entry = entry.strip()
+        if ":" in entry:
+            user, passwd = entry.split(":", 1)
+            pairs.append((user.strip(), passwd.strip()))
+    return pairs or None
+
+AUTH_CREDENTIALS = _parse_auth()

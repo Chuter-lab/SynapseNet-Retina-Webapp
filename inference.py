@@ -1,7 +1,6 @@
 """SynapseNet-Retina inference engine with tiled prediction and caching."""
 import numpy as np
 import torch
-import torch.nn.functional as F
 from unet import UNet2d
 from pathlib import Path
 from skimage.morphology import disk, binary_opening

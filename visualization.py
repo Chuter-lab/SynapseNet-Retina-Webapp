@@ -41,7 +41,7 @@ def create_overlay(image_gray, results, alpha=None, show_structures=None):
 
 
 def create_panel(image_gray, results):
-    """Create a multi-panel visualization.
+    """Create binary mask panels for each structure.
 
     Returns a dict of {name: BGR image} for each panel.
     """
@@ -51,20 +51,10 @@ def create_panel(image_gray, results):
         img_u8 = image_gray
 
     panels = {}
-    panels["original"] = cv2.cvtColor(img_u8, cv2.COLOR_GRAY2BGR)
-    panels["overlay"] = create_overlay(image_gray, results)
-
     for struct_name, struct_result in results.items():
-        # Binary mask panel
         mask_img = np.zeros_like(img_u8)
         mask_img[struct_result["binary"]] = 255
         panels[struct_name] = cv2.cvtColor(mask_img, cv2.COLOR_GRAY2BGR)
-
-        # Probability map panel
-        prob = struct_result["prob_map"]
-        prob_u8 = (np.clip(prob, 0, 1) * 255).astype(np.uint8)
-        prob_color = cv2.applyColorMap(prob_u8, cv2.COLORMAP_JET)
-        panels[f"{struct_name}_prob"] = prob_color
 
     return panels
 
@@ -261,20 +251,3 @@ def export_metrics_csv(metrics, output_path):
                 writer.writerow(["Cross-structure", metric_name, value])
 
     return output_path
-
-
-def format_results_table(results):
-    """Format segmentation results as a markdown table string."""
-    rows = []
-    rows.append("| Structure | Instances | Pixels | Coverage (%) |")
-    rows.append("|-----------|-----------|--------|-------------|")
-
-    for struct_name, struct_result in results.items():
-        label = config.STRUCTURES[struct_name]["label"]
-        n_inst = struct_result["n_instances"]
-        n_pixels = int(np.sum(struct_result["binary"]))
-        total = struct_result["binary"].size
-        coverage = 100.0 * n_pixels / total if total > 0 else 0.0
-        rows.append(f"| {label} | {n_inst} | {n_pixels:,} | {coverage:.2f} |")
-
-    return "\n".join(rows)

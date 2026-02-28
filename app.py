@@ -8,6 +8,7 @@ import numpy as np
 import cv2
 import tifffile
 import time
+import uuid
 from pathlib import Path
 from PIL import Image
 import torch
@@ -150,12 +151,13 @@ def process_image(file, structures, threshold, progress=gr.Progress()):
     progress(1.0, desc="Done!")
 
     # Save state to disk for overlay re-rendering (numpy arrays can't go in gr.State)
-    state_dir = config.TEMP_DIR / "overlay_state"
+    session_id = uuid.uuid4().hex[:12]
+    state_dir = config.TEMP_DIR / "overlay_state" / session_id
     state_dir.mkdir(parents=True, exist_ok=True)
     np.save(str(state_dir / "image_gray.npy"), img_gray)
     for struct in selected:
         np.save(str(state_dir / f"binary_{struct}.npy"), results[struct]["binary"])
-    state = {"selected": selected}
+    state = {"selected": selected, "session_id": session_id}
 
     # Default checkboxes: all True
     show_ves = "vesicles" in selected
@@ -180,7 +182,8 @@ def regenerate_overlay(state, show_ves, show_mito, show_mem):
         return None
 
     selected = state.get("selected", [])
-    state_dir = config.TEMP_DIR / "overlay_state"
+    session_id = state.get("session_id", "")
+    state_dir = config.TEMP_DIR / "overlay_state" / session_id
 
     # Load image and results from disk
     gray_path = state_dir / "image_gray.npy"
@@ -245,11 +248,10 @@ def create_app():
     .pwa-install-container, .pwa-toast, [class*="pwa"] { display: none !important; }
     """
 
-    with gr.Blocks(
-        title="THIRU",
-        css=css,
-        theme=gr.themes.Soft(primary_hue="blue"),
-    ) as app:
+    with gr.Blocks(title="THIRU") as app:
+        # Store css/theme for launch() (Gradio 6 moved these from Blocks to launch)
+        app._thiru_css = css
+        app._thiru_theme = gr.themes.Soft(primary_hue="blue")
         if logo_svg:
             gr.HTML(f"""
             <div class="thiru-header">
@@ -317,15 +319,15 @@ def create_app():
                 # Layer toggle checkboxes
                 with gr.Row():
                     cb_vesicles = gr.Checkbox(
-                        label="Vesicles", value=True, visible=True,
+                        label="Vesicles", value=True,
                         elem_id="toggle_vesicles",
                     )
                     cb_mitochondria = gr.Checkbox(
-                        label="Mitochondria", value=True, visible=True,
+                        label="Mitochondria", value=True,
                         elem_id="toggle_mitochondria",
                     )
                     cb_membrane = gr.Checkbox(
-                        label="Membrane", value=True, visible=True,
+                        label="Membrane", value=True,
                         elem_id="toggle_membrane",
                     )
 
@@ -432,7 +434,7 @@ def main():
     favicon_ico_bytes = favicon_ico_path.read_bytes() if favicon_ico_path.exists() else b""
 
     # Launch (non-blocking so we can patch routes after)
-    app.launch(
+    launch_kwargs = dict(
         server_name=config.APP_HOST,
         server_port=config.APP_PORT,
         share=False,
@@ -443,6 +445,12 @@ def main():
         prevent_thread_lock=True,
         allowed_paths=[str(config.TEMP_DIR), str(config.UPLOAD_DIR)],
     )
+    # Gradio 6 accepts css/theme in launch()
+    if hasattr(app, "_thiru_css"):
+        launch_kwargs["css"] = app._thiru_css
+    if hasattr(app, "_thiru_theme"):
+        launch_kwargs["theme"] = app._thiru_theme
+    app.launch(**launch_kwargs)
 
     # Override Gradio's manifest.json (disables "Open in app")
     async def empty_manifest(request):
