@@ -124,9 +124,10 @@ def compute_morphometrics(results, image_shape):
                     if p.perimeter > 0:
                         circ = 4 * np.pi * p.area / (p.perimeter ** 2)
                         circularities.append(circ)
-                    if p.minor_axis_length > 0:
-                        ar = p.major_axis_length / p.minor_axis_length
-                        aspect_ratios.append(ar)
+                    minor = getattr(p, "axis_minor_length", None) or getattr(p, "minor_axis_length", 0)
+                    major = getattr(p, "axis_major_length", None) or getattr(p, "major_axis_length", 0)
+                    if minor > 0:
+                        aspect_ratios.append(major / minor)
                 if circularities:
                     m["mean_circularity"] = round(float(np.mean(circularities)), 4)
                 if aspect_ratios:

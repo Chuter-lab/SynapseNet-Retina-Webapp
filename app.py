@@ -149,12 +149,13 @@ def process_image(file, structures, threshold, progress=gr.Progress()):
 
     progress(1.0, desc="Done!")
 
-    # State for overlay re-rendering
-    state = {
-        "image_gray": img_gray,
-        "results": results,
-        "selected": selected,
-    }
+    # Save state to disk for overlay re-rendering (numpy arrays can't go in gr.State)
+    state_dir = config.TEMP_DIR / "overlay_state"
+    state_dir.mkdir(parents=True, exist_ok=True)
+    np.save(str(state_dir / "image_gray.npy"), img_gray)
+    for struct in selected:
+        np.save(str(state_dir / f"binary_{struct}.npy"), results[struct]["binary"])
+    state = {"selected": selected}
 
     # Default checkboxes: all True
     show_ves = "vesicles" in selected
@@ -178,8 +179,20 @@ def regenerate_overlay(state, show_ves, show_mito, show_mem):
     if state is None:
         return None
 
-    image_gray = state["image_gray"]
-    results = state["results"]
+    selected = state.get("selected", [])
+    state_dir = config.TEMP_DIR / "overlay_state"
+
+    # Load image and results from disk
+    gray_path = state_dir / "image_gray.npy"
+    if not gray_path.exists():
+        return None
+
+    image_gray = np.load(str(gray_path))
+    results = {}
+    for struct in selected:
+        bin_path = state_dir / f"binary_{struct}.npy"
+        if bin_path.exists():
+            results[struct] = {"binary": np.load(str(bin_path))}
 
     show_structures = []
     if show_ves and "vesicles" in results:
