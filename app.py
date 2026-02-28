@@ -321,13 +321,7 @@ def main():
 
     favicon = str(STATIC_DIR / "favicon.ico")
 
-    # Override Gradio's manifest.json to return empty (disables "Open in app")
-    async def empty_manifest(request):
-        return JSONResponse({})
-
-    app.app.router.routes.insert(0, Route("/manifest.json", empty_manifest))
-
-    # Launch with simple password auth
+    # Launch with simple password auth (non-blocking so we can patch routes)
     app.launch(
         server_name=config.APP_HOST,
         server_port=config.APP_PORT,
@@ -337,7 +331,18 @@ def main():
         auth_message="THIRU — TEM Histological Image Recognition for Ultrastructure. Enter credentials to access.",
         pwa=False,
         favicon_path=favicon if Path(favicon).exists() else None,
+        prevent_thread_lock=True,
     )
+
+    # Override Gradio's manifest.json after launch (disables "Open in app")
+    async def empty_manifest(request):
+        return JSONResponse({})
+
+    app.app.router.routes.insert(0, Route("/manifest.json", empty_manifest))
+
+    # Block the main thread
+    import threading
+    threading.Event().wait()
 
 
 if __name__ == "__main__":
