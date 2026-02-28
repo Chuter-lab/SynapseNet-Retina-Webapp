@@ -22,7 +22,7 @@ def _load_model(structure: str) -> tuple:
         raise FileNotFoundError(f"Checkpoint not found: {ckpt_path}")
 
     device = torch.device(f"cuda:{config.GPU_ID}" if torch.cuda.is_available() else "cpu")
-    save_dict = torch.load(str(ckpt_path), map_location=device, weights_only=False)
+    save_dict = torch.load(str(ckpt_path), map_location=device, weights_only=True)
 
     if "model_state" in save_dict:
         state_dict = save_dict["model_state"]
