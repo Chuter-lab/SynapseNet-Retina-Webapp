@@ -295,7 +295,7 @@ _onload_js = """
         const link = document.createElement('link');
         link.rel = 'icon';
         link.type = 'image/x-icon';
-        link.href = '/favicon.ico';
+        link.href = '/favicon.ico?v=2';
         document.head.appendChild(link);
     }
     function removeManifest() {
@@ -305,7 +305,7 @@ _onload_js = """
     removeManifest();
     // Watch for Gradio re-injecting its favicon or manifest
     new MutationObserver(() => {
-        const badFav = document.querySelector('link[rel*="icon"]:not([href="/favicon.ico"])');
+        const badFav = document.querySelector('link[rel*="icon"]:not([href*="/favicon.ico"])');
         const manifest = document.querySelector('link[rel="manifest"]');
         if (badFav || manifest) { setFavicon(); removeManifest(); }
     }).observe(document.head, { childList: true });
@@ -340,7 +340,11 @@ def main():
 
     # Override Gradio's favicon.ico with our own
     async def serve_favicon(request):
-        return Response(content=favicon_bytes, media_type="image/x-icon")
+        return Response(
+            content=favicon_bytes,
+            media_type="image/x-icon",
+            headers={"Cache-Control": "no-cache, must-revalidate", "CDN-Cache-Control": "no-store"},
+        )
 
     app.app.router.routes.insert(0, Route("/manifest.json", empty_manifest))
     app.app.router.routes.insert(0, Route("/favicon.ico", serve_favicon))
