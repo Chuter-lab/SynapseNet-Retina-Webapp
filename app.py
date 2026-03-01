@@ -150,10 +150,10 @@ def _load_image(file_path):
 
 
 def _check_models():
-    """Check which models are available."""
+    """Check which models are available (at least one checkpoint per structure)."""
     available = {}
-    for struct, path in config.CHECKPOINTS.items():
-        available[struct] = path.exists()
+    for struct, paths in config.CHECKPOINTS.items():
+        available[struct] = any(p.exists() for p in paths)
     return available
 
 
@@ -372,9 +372,9 @@ def create_app():
     }
     .model-status { font-size: 0.9em; padding: 8px 12px; background: #f8fafc; border-radius: 6px; }
     .thiru-header { margin-bottom: 8px; }
-    .thiru-header svg { max-height: 80px; width: auto; }
-    .thiru-subtitle { color: #64748b; font-size: 0.95em; margin-top: 4px; letter-spacing: 0.5px; }
-    .thiru-policy { color: #94a3b8; font-size: 0.8em; line-height: 1.5; margin-top: 10px; }
+    .thiru-header svg { max-height: 80px; width: auto; display: block; }
+    .thiru-subtitle { color: #64748b; font-size: 0.95em; margin-top: 4px; letter-spacing: 0.5px; padding-left: 4.2%; }
+    .thiru-policy { color: #94a3b8; font-size: 0.8em; line-height: 1.5; margin-top: 10px; padding-left: 4.2%; }
     .thiru-policy p { margin: 4px 0; }
     .thiru-policy strong { color: #64748b; }
     footer { display: none !important; }

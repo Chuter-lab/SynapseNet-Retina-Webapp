@@ -1,4 +1,14 @@
-"""SynapseNet-Retina inference engine with tiled prediction and caching."""
+"""SynapseNet-Retina inference engine.
+
+Matches the combination optimization pipeline from node01 exactly:
+- Min-max normalization to [0,1]
+- 256px patches, stride 192, zero-padded per patch
+- torch.sigmoid for activation (1-channel models), Sigmoid built-in (2-channel)
+- Channel 0 = foreground (SynapseNet convention)
+- TTA: 7 geometric augmentations (for mitochondria)
+- Ensemble: element-wise max of multiple models (for mitochondria)
+- Post-processing: morphological opening + min area filtering
+"""
 import numpy as np
 import torch
 from unet import UNet2d
@@ -6,34 +16,41 @@ from skimage.morphology import disk, opening
 from skimage.measure import label as skimage_label
 import config
 
-# Cache loaded models
+# Cache loaded models: {checkpoint_path_str: (model, device, has_sigmoid)}
 _model_cache = {}
 
 
-def _load_model(structure: str) -> tuple:
-    """Load and cache a UNet2d model for the given structure."""
-    if structure in _model_cache:
-        return _model_cache[structure]
+def _load_model(checkpoint_path) -> tuple:
+    """Load a 2D UNet model from a checkpoint path.
 
-    ckpt_path = config.CHECKPOINTS[structure]
-    if not ckpt_path.exists():
-        raise FileNotFoundError(f"Checkpoint not found: {ckpt_path}")
+    Auto-detects out_channels and final activation from state dict.
+    """
+    cache_key = str(checkpoint_path)
+    if cache_key in _model_cache:
+        return _model_cache[cache_key]
+
+    if not checkpoint_path.exists():
+        raise FileNotFoundError(f"Checkpoint not found: {checkpoint_path}")
 
     device = torch.device(f"cuda:{config.GPU_ID}" if torch.cuda.is_available() else "cpu")
-    save_dict = torch.load(str(ckpt_path), map_location=device, weights_only=True)
+    save_dict = torch.load(str(checkpoint_path), map_location=device, weights_only=False)
 
-    if "model_state" in save_dict:
+    # Extract state dict from various checkpoint formats
+    if isinstance(save_dict, dict) and "model_state" in save_dict:
         state_dict = save_dict["model_state"]
     elif isinstance(save_dict, dict) and "state_dict" in save_dict:
         state_dict = save_dict["state_dict"]
+    elif isinstance(save_dict, dict) and any(k.startswith("encoder.") for k in save_dict.keys()):
+        state_dict = save_dict
     else:
         state_dict = save_dict.state_dict() if hasattr(save_dict, "state_dict") else save_dict
 
-    # Detect out_channels from state dict
+    # Auto-detect out_channels from out_conv layer
     out_key = "out_conv.weight"
-    out_channels = state_dict[out_key].shape[0] if out_key in state_dict else config.MODEL_PARAMS["out_channels"]
-    has_sigmoid = out_channels == 2  # pretrained models with 2 channels have sigmoid
+    out_channels = state_dict[out_key].shape[0] if out_key in state_dict else 1
 
+    # 2-channel models (DA) have built-in Sigmoid; 1-channel models (fine-tuned) do not
+    has_sigmoid = out_channels == 2
     final_act = "Sigmoid" if has_sigmoid else config.MODEL_PARAMS["final_activation"]
 
     model = UNet2d(
@@ -47,43 +64,93 @@ def _load_model(structure: str) -> tuple:
     model = model.to(device)
     model.eval()
 
-    _model_cache[structure] = (model, device, has_sigmoid, out_channels)
-    return model, device, has_sigmoid, out_channels
+    _model_cache[cache_key] = (model, device, has_sigmoid)
+    return model, device, has_sigmoid
 
 
-def tiled_inference(model, img_norm, device, patch_size=256, has_sigmoid=False, out_channels=1):
-    """Run tiled inference on a 2D image, handling arbitrary sizes."""
+def _normalize(image_gray):
+    """Min-max normalize image to [0,1] — matches training pipeline."""
+    img = image_gray.astype(np.float32)
+    img_min = img.min()
+    img_max = img.max()
+    return (img - img_min) / (img_max - img_min + 1e-8)
+
+
+def _tiled_inference(model, img_norm, device, has_sigmoid=False):
+    """Run tiled 2D inference matching node01 evaluation code exactly.
+
+    Uses 256px patches, stride 192, zero-padding per patch.
+    Channel 0 = foreground (SynapseNet convention).
+    """
     h, w = img_norm.shape
-    overlap = config.TILE_OVERLAP
-    stride = patch_size - overlap
+    ps = config.TILE_SIZE
+    stride = config.TILE_STRIDE
 
-    # Pad image to cover full tiles
-    pad_h = (stride - (h % stride)) % stride + overlap
-    pad_w = (stride - (w % stride)) % stride + overlap
-    padded = np.pad(img_norm, ((0, pad_h), (0, pad_w)), mode="reflect")
+    pred_fg = np.zeros((h, w), dtype=np.float32)
+    count = np.zeros((h, w), dtype=np.float32)
 
-    # Accumulator for predictions and weight map
-    pred_sum = np.zeros((padded.shape[0], padded.shape[1]), dtype=np.float64)
-    weight_sum = np.zeros_like(pred_sum)
-
-    ph, pw = padded.shape
     with torch.no_grad():
-        for y in range(0, ph - patch_size + 1, stride):
-            for x in range(0, pw - patch_size + 1, stride):
-                patch = padded[y : y + patch_size, x : x + patch_size]
-                tensor = torch.from_numpy(patch).float().unsqueeze(0).unsqueeze(0).to(device)
-                out = model(tensor)
-                out = out.cpu().numpy()[0, 0]  # channel 0 = foreground
+        for y in range(0, h, stride):
+            for x in range(0, w, stride):
+                y1, y2 = y, min(y + ps, h)
+                x1, x2 = x, min(x + ps, w)
+
+                # Zero-padded patch (matches notebook exactly)
+                patch = np.zeros((ps, ps), dtype=np.float32)
+                patch[:y2 - y1, :x2 - x1] = img_norm[y1:y2, x1:x2]
+
+                inp = torch.from_numpy(patch[None, None]).to(device)
+                out = model(inp)
 
                 if not has_sigmoid:
-                    out = 1.0 / (1.0 + np.exp(-np.clip(out, -20, 20)))
+                    out = torch.sigmoid(out)
 
-                pred_sum[y : y + patch_size, x : x + patch_size] += out
-                weight_sum[y : y + patch_size, x : x + patch_size] += 1.0
+                out = out.cpu().numpy()[0]
+                # Channel 0 = foreground (SynapseNet convention)
+                pred_fg[y1:y2, x1:x2] += out[0, :y2 - y1, :x2 - x1]
+                count[y1:y2, x1:x2] += 1.0
 
-    weight_sum = np.maximum(weight_sum, 1.0)
-    pred = (pred_sum / weight_sum)[:h, :w]
-    return pred.astype(np.float32)
+    pred_fg /= (count + 1e-8)
+    return pred_fg
+
+
+def _apply_tta(model, img_norm, device, has_sigmoid=False):
+    """Apply test-time augmentation with 7 geometric transforms.
+
+    Transforms: identity, hflip, vflip, hvflip, rot90, rot180, rot270.
+    Returns the averaged probability map.
+    """
+    augmentations = [
+        ("identity", lambda x: x, lambda x: x),
+        ("hflip", lambda x: np.flip(x, axis=1).copy(), lambda x: np.flip(x, axis=1).copy()),
+        ("vflip", lambda x: np.flip(x, axis=0).copy(), lambda x: np.flip(x, axis=0).copy()),
+        ("hvflip", lambda x: np.flip(np.flip(x, axis=0), axis=1).copy(),
+                   lambda x: np.flip(np.flip(x, axis=0), axis=1).copy()),
+        ("rot90", lambda x: np.rot90(x, k=1).copy(), lambda x: np.rot90(x, k=-1).copy()),
+        ("rot180", lambda x: np.rot90(x, k=2).copy(), lambda x: np.rot90(x, k=-2).copy()),
+        ("rot270", lambda x: np.rot90(x, k=3).copy(), lambda x: np.rot90(x, k=-3).copy()),
+    ]
+
+    h, w = img_norm.shape
+    prob_sum = np.zeros((h, w), dtype=np.float64)
+
+    for name, forward_aug, inverse_aug in augmentations:
+        aug_img = forward_aug(img_norm)
+        aug_pred = _tiled_inference(model, aug_img, device, has_sigmoid=has_sigmoid)
+        orig_pred = inverse_aug(aug_pred)
+        prob_sum += orig_pred
+
+    return (prob_sum / len(augmentations)).astype(np.float32)
+
+
+def _infer_single_model(checkpoint_path, img_norm, use_tta=False):
+    """Run inference with a single model, optionally with TTA."""
+    model, device, has_sigmoid = _load_model(checkpoint_path)
+
+    if use_tta:
+        return _apply_tta(model, img_norm, device, has_sigmoid=has_sigmoid)
+    else:
+        return _tiled_inference(model, img_norm, device, has_sigmoid=has_sigmoid)
 
 
 def postprocess(prob_map, structure, threshold=None, min_area=None):
@@ -105,14 +172,16 @@ def postprocess(prob_map, structure, threshold=None, min_area=None):
         if np.sum(labeled == region_id) < min_area:
             labeled[labeled == region_id] = 0
 
-    # Re-label sequentially
     final_binary = labeled > 0
     final_labeled = skimage_label(final_binary)
     return final_binary, final_labeled
 
 
 def segment(image_gray, structures=None, thresholds=None, min_areas=None):
-    """Run full segmentation pipeline.
+    """Run full segmentation pipeline matching evaluation code on node01.
+
+    For mitochondria: ensemble of 3 models with TTA and element-wise max.
+    For membrane: single model, no TTA.
 
     Args:
         image_gray: 2D numpy array (uint8 or float), grayscale EM image
@@ -130,24 +199,40 @@ def segment(image_gray, structures=None, thresholds=None, min_areas=None):
     if min_areas is None:
         min_areas = {}
 
-    # Standardize: zero-mean, unit-variance (matches torch_em training normalization)
-    img_norm = image_gray.astype(np.float32)
-    mean = img_norm.mean()
-    std = img_norm.std()
-    img_norm = (img_norm - mean) / (std + 1e-7)
+    # Min-max normalize to [0,1] — matches training pipeline
+    img_norm = _normalize(image_gray)
 
     results = {}
     for struct in structures:
         if struct not in config.CHECKPOINTS:
             continue
 
-        model, device, has_sigmoid, out_channels = _load_model(struct)
-        prob_map = tiled_inference(
-            model, img_norm, device,
-            patch_size=config.TILE_SIZE,
-            has_sigmoid=has_sigmoid,
-            out_channels=out_channels,
-        )
+        checkpoint_paths = config.CHECKPOINTS[struct]
+        use_tta = config.TTA_AUGMENTATIONS.get(struct, False)
+        ensemble_method = config.ENSEMBLE_METHOD.get(struct)
+
+        # Filter to only existing checkpoints
+        existing_paths = [p for p in checkpoint_paths if p.exists()]
+        if not existing_paths:
+            continue
+
+        if len(existing_paths) == 1 or ensemble_method is None:
+            # Single model inference
+            prob_map = _infer_single_model(existing_paths[0], img_norm, use_tta=use_tta)
+        else:
+            # Ensemble inference
+            prob_maps = []
+            for ckpt_path in existing_paths:
+                pm = _infer_single_model(ckpt_path, img_norm, use_tta=use_tta)
+                prob_maps.append(pm)
+
+            if ensemble_method == "max":
+                prob_map = np.maximum.reduce(prob_maps)
+            elif ensemble_method == "avg":
+                prob_map = np.mean(prob_maps, axis=0)
+            else:
+                prob_map = np.maximum.reduce(prob_maps)
+
         thresh = thresholds.get(struct)
         min_a = min_areas.get(struct)
         binary, instances = postprocess(prob_map, struct, threshold=thresh, min_area=min_a)
