@@ -1,13 +1,11 @@
-"""Playwright test for THIRU results display redesign.
+"""Playwright test for THIRU results display.
 
 Tests:
 1. Login and upload test image
-2. Run segmentation with all 3 structures
-3. Verify overlay image appears
-4. Toggle each checkbox and verify overlay updates
-5. Verify gallery shows masks only (no prob maps)
-6. Verify morphometric metrics contain expected fields
-7. Verify downloads include all expected files
+2. Run segmentation
+3. Verify 3-panel display (Input, Mitochondria overlay, Membrane overlay)
+4. Verify morphometric metrics contain expected fields
+5. Verify downloads include all expected files (no heatmaps)
 """
 import os
 import sys
@@ -43,11 +41,9 @@ def run_test():
         log("=" * 60, results)
         log("TEST 1: Login", results)
 
-        # Login via fetch in page context (properly sets cookies for the domain)
         if USERNAME and PASSWORD:
             page.goto(URL, timeout=60000)
             time.sleep(5)
-            # URL-encode in Python to avoid JS/shell escaping issues
             import urllib.parse
             encoded_body = urllib.parse.urlencode({"username": USERNAME, "password": PASSWORD})
             log(f"  Encoded body: {encoded_body}", results)
@@ -62,13 +58,11 @@ def run_test():
                 }).catch(e => ({error: e.message}));
             }""", encoded_body)
             log(f"  Login result: {login_result}", results)
-            # Reload to pick up the auth cookies
             page.reload(timeout=60000)
             time.sleep(10)
 
         page.screenshot(path=os.path.join(DOWNLOAD_DIR, "thiru_after_login.png"))
 
-        # Wait for Run Segmentation button to appear
         run_btn = page.locator("button").filter(has_text="Run Segmentation")
         try:
             run_btn.first.wait_for(timeout=30000)
@@ -103,7 +97,7 @@ def run_test():
             page.wait_for_function(
                 """() => {
                     const imgs = document.querySelectorAll('.image-container img, [data-testid="image"] img');
-                    return imgs.length > 0 && imgs[0].src && imgs[0].src.length > 100;
+                    return imgs.length >= 3 && imgs[0].src && imgs[0].src.length > 100;
                 }""",
                 timeout=SEG_TIMEOUT,
             )
@@ -113,7 +107,7 @@ def run_test():
         except Exception:
             time.sleep(60)
             img_count = page.locator("img").count()
-            if img_count > 5:
+            if img_count >= 3:
                 log(f"  PASS: Segmentation likely completed ({img_count} imgs)", results)
                 passed += 1
             else:
@@ -122,113 +116,48 @@ def run_test():
 
         page.screenshot(path=os.path.join(DOWNLOAD_DIR, "thiru_post_run.png"))
 
-        # ===================== OVERLAY =====================
+        # ===================== 3-PANEL DISPLAY =====================
         log("=" * 60, results)
-        log("TEST 4: Overlay image present", results)
+        log("TEST 4: Three-panel display (Input, Mito, Membrane)", results)
         page_html = page.content()
-        if "Overlay" in page_html and page.locator("img").count() > 0:
-            log("  PASS: Overlay image present", results)
-            passed += 1
-        else:
-            log("  FAIL: Overlay not found", results)
-            failed += 1
-
-        # ===================== CHECKBOXES =====================
-        log("=" * 60, results)
-        log("TEST 5: Layer toggle checkboxes", results)
-
-        # Standalone checkboxes have data-testid="checkbox" and class svelte-1q8xtp9
-        # CheckboxGroup items have class svelte-yb2gcx
-        # Use data-testid="checkbox" to find standalone toggles
-        toggle_cbs = page.locator("input[data-testid='checkbox']")
-        toggle_count = toggle_cbs.count()
-        log(f"  Standalone toggle checkboxes found: {toggle_count}", results)
-
-        # Get their labels
-        toggle_info = page.evaluate("""() => {
-            const cbs = document.querySelectorAll('input[data-testid="checkbox"]');
-            return Array.from(cbs).map((cb, i) => ({
-                index: i,
-                label: cb.closest('label')?.textContent?.trim() || 'unknown',
-                checked: cb.checked
-            }));
-        }""")
-        for info in toggle_info:
-            log(f"  Toggle {info['index']}: '{info['label']}' checked={info['checked']}", results)
-
-        if toggle_count == 2:
-            log("  PASS: All 2 toggle checkboxes found", results)
-            passed += 1
-        else:
-            log(f"  FAIL: Expected 2, found {toggle_count}", results)
-            failed += 1
-
-        # ===================== TOGGLE OVERLAY =====================
-        log("=" * 60, results)
-        log("TEST 6: Toggle checkboxes update overlay", results)
-
-        toggle_ok = True
-        for i in range(min(toggle_count, 2)):
-            label = toggle_info[i]["label"] if i < len(toggle_info) else f"toggle_{i}"
-
-            # Get overlay image src before
-            before_src = page.evaluate(
-                "() => { const img = document.querySelector('.image-container img'); return img ? img.src : ''; }"
-            )
-
-            # Click the checkbox
-            toggle_cbs.nth(i).click()
-            time.sleep(4)
-
-            # Get overlay image src after
-            after_src = page.evaluate(
-                "() => { const img = document.querySelector('.image-container img'); return img ? img.src : ''; }"
-            )
-
-            changed = before_src != after_src
-            if changed:
-                log(f"  {label} toggle: overlay CHANGED", results)
-            else:
-                log(f"  {label} toggle: overlay UNCHANGED", results)
-                toggle_ok = False
-
-            page.screenshot(path=os.path.join(DOWNLOAD_DIR, f"thiru_toggle_{i}_{label}_off.png"))
-
-            # Toggle back
-            toggle_cbs.nth(i).click()
-            time.sleep(4)
-
-        if toggle_ok:
-            log("  PASS: All toggles changed overlay", results)
-            passed += 1
-        else:
-            log("  FAIL: Some toggles did not change overlay", results)
-            failed += 1
-
-        # ===================== GALLERY =====================
-        log("=" * 60, results)
-        log("TEST 7: Gallery shows masks only", results)
-
         page_text = page.inner_text("body")
-        has_prob = "probability" in page_text.lower()
 
-        if not has_prob:
-            log("  PASS: No probability maps visible", results)
+        has_input = "Input" in page_html
+        has_mito = "Mitochondria" in page_html
+        has_membrane = "Membrane" in page_html
+
+        img_panels = page.locator(".image-container img, [data-testid='image'] img")
+        panel_count = img_panels.count()
+
+        log(f"  Image panels found: {panel_count}", results)
+        log(f"  Labels: Input={has_input}, Mitochondria={has_mito}, Membrane={has_membrane}", results)
+
+        if panel_count >= 3 and has_input and has_mito and has_membrane:
+            log("  PASS: Three-panel display present", results)
             passed += 1
         else:
-            log("  FAIL: Probability maps text found on page", results)
+            log("  FAIL: Expected 3 panels with correct labels", results)
+            failed += 1
+
+        # Verify no probability maps or heatmaps visible
+        has_prob = "probability" in page_text.lower() or "heatmap" in page_text.lower()
+        if not has_prob:
+            log("  PASS: No probability maps/heatmaps visible", results)
+            passed += 1
+        else:
+            log("  FAIL: Probability/heatmap text found on page", results)
             failed += 1
 
         # ===================== MORPHOMETRICS =====================
         log("=" * 60, results)
-        log("TEST 8: Morphometric metrics", results)
+        log("TEST 5: Morphometric metrics", results)
 
         expected = ["Instances", "Total area", "Coverage", "Mean area", "Min area", "Max area", "Std area"]
         found_m = [m for m in expected if m in page_text]
 
         extra = []
         lower_text = page_text.lower()
-        for kw in ["circularity", "aspect ratio", "perimeter", "density"]:
+        for kw in ["circularity", "aspect ratio", "perimeter"]:
             if kw in lower_text:
                 extra.append(kw)
 
@@ -251,30 +180,39 @@ def run_test():
 
         # ===================== DOWNLOADS =====================
         log("=" * 60, results)
-        log("TEST 9: Download files", results)
+        log("TEST 6: Download files", results)
 
         html = page.content()
         expected_files = [
-            "last_overlay.png",
+            "display_panel.png",
+            "overlay_mitochondria.png",
+            "overlay_membrane.png",
             "mask_mitochondria.tif",
             "mask_membrane.tif",
+            "metrics.csv",
+        ]
+        # Verify NO probability maps
+        unwanted_files = [
             "prob_mitochondria.tif",
             "prob_membrane.tif",
-            "metrics.csv",
         ]
 
         found_f = [f for f in expected_files if f in html or f in page_text]
         missing_f = [f for f in expected_files if f not in found_f]
+        found_unwanted = [f for f in unwanted_files if f in html or f in page_text]
+
         for f in found_f:
             log(f"  Found: {f}", results)
         for f in missing_f:
             log(f"  Missing: {f}", results)
+        for f in found_unwanted:
+            log(f"  UNWANTED: {f}", results)
 
-        if len(found_f) >= 5:
-            log(f"  PASS: {len(found_f)}/{len(expected_files)} files", results)
+        if len(found_f) >= 5 and len(found_unwanted) == 0:
+            log(f"  PASS: {len(found_f)}/{len(expected_files)} files, no heatmaps", results)
             passed += 1
         else:
-            log(f"  FAIL: {len(found_f)}/{len(expected_files)} files", results)
+            log(f"  FAIL: {len(found_f)}/{len(expected_files)} files, {len(found_unwanted)} unwanted", results)
             failed += 1
 
         # ===================== FINAL =====================

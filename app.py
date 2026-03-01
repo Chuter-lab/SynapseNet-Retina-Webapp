@@ -8,7 +8,6 @@ import numpy as np
 import cv2
 import tifffile
 import time
-import uuid
 from pathlib import Path
 from PIL import Image
 import torch
@@ -103,21 +102,27 @@ def process_image(file, structures, threshold, progress=gr.Progress()):
 
     progress(0.8, desc="Creating visualization...")
 
-    # Create overlay (all structures on)
-    overlay_bgr = visualization.create_overlay(img_gray, results)
-    overlay_rgb = cv2.cvtColor(overlay_bgr, cv2.COLOR_BGR2RGB)
-    overlay_display = visualization.resize_for_display(overlay_rgb)
+    # Prepare grayscale input display
+    if img_gray.dtype != np.uint8:
+        img_u8 = (np.clip(img_gray, 0, 255)).astype(np.uint8)
+    else:
+        img_u8 = img_gray
+    input_rgb = cv2.cvtColor(img_u8, cv2.COLOR_GRAY2RGB)
+    input_display = visualization.resize_for_display(input_rgb)
 
-    # Create individual structure panels
-    panels = visualization.create_panel(img_gray, results)
-
-    # Build gallery images — binary masks only (no prob maps)
-    gallery_images = []
-    for struct in selected:
-        if struct in panels:
-            mask_rgb = cv2.cvtColor(panels[struct], cv2.COLOR_BGR2RGB)
-            mask_display = visualization.resize_for_display(mask_rgb)
-            gallery_images.append((mask_display, config.STRUCTURES[struct]["label"]))
+    # Create per-structure overlay images
+    mito_overlay_display = None
+    membrane_overlay_display = None
+    if "mitochondria" in selected:
+        mito_bgr = visualization.create_individual_overlay(img_gray, results, "mitochondria")
+        mito_overlay_display = visualization.resize_for_display(
+            cv2.cvtColor(mito_bgr, cv2.COLOR_BGR2RGB)
+        )
+    if "membrane" in selected:
+        mem_bgr = visualization.create_individual_overlay(img_gray, results, "membrane")
+        membrane_overlay_display = visualization.resize_for_display(
+            cv2.cvtColor(mem_bgr, cv2.COLOR_BGR2RGB)
+        )
 
     # Compute morphometric metrics
     metrics = visualization.compute_morphometrics(results, img_gray.shape)
@@ -125,88 +130,43 @@ def process_image(file, structures, threshold, progress=gr.Progress()):
     metrics_text = visualization.format_morphometrics_markdown(metrics)
     metrics_text += f"\n\n**Processing time:** {elapsed:.1f}s | **Image size:** {w}x{h}"
 
-    # Save overlay for download
-    overlay_path = config.TEMP_DIR / "last_overlay.png"
-    cv2.imwrite(str(overlay_path), overlay_bgr)
+    # Build download files
+    download_files = []
 
-    # Save masks as TIFF for download
-    download_files = [str(overlay_path)]
+    # 1. Combined panel PNG (the 3 images displayed)
+    panel_bgr = visualization.create_display_panel(img_gray, results, selected)
+    panel_path = config.TEMP_DIR / "display_panel.png"
+    cv2.imwrite(str(panel_path), panel_bgr)
+    download_files.append(str(panel_path))
+
+    # 2. Individual overlay PNGs
+    for struct in selected:
+        ov_bgr = visualization.create_individual_overlay(img_gray, results, struct)
+        ov_path = config.TEMP_DIR / f"overlay_{struct}.png"
+        cv2.imwrite(str(ov_path), ov_bgr)
+        download_files.append(str(ov_path))
+
+    # 3. Individual binary mask TIFs
     for struct in selected:
         mask_path = config.TEMP_DIR / f"mask_{struct}.tif"
         mask_u8 = (results[struct]["binary"].astype(np.uint8) * 255)
         tifffile.imwrite(str(mask_path), mask_u8)
         download_files.append(str(mask_path))
 
-    # Save probability maps as TIFF for download
-    for struct in selected:
-        prob_path = config.TEMP_DIR / f"prob_{struct}.tif"
-        tifffile.imwrite(str(prob_path), results[struct]["prob_map"])
-        download_files.append(str(prob_path))
-
-    # Export metrics CSV
+    # 4. Metrics CSV
     csv_path = config.TEMP_DIR / "metrics.csv"
     visualization.export_metrics_csv(metrics, csv_path)
     download_files.append(str(csv_path))
 
     progress(1.0, desc="Done!")
 
-    # Save state to disk for overlay re-rendering (numpy arrays can't go in gr.State)
-    session_id = uuid.uuid4().hex[:12]
-    state_dir = config.TEMP_DIR / "overlay_state" / session_id
-    state_dir.mkdir(parents=True, exist_ok=True)
-    np.save(str(state_dir / "image_gray.npy"), img_gray)
-    for struct in selected:
-        np.save(str(state_dir / f"binary_{struct}.npy"), results[struct]["binary"])
-    state = {"selected": selected, "session_id": session_id}
-
-    # Default checkboxes: all True
-    show_mito = "mitochondria" in selected
-    show_mem = "membrane" in selected
-
     return (
-        state,
-        overlay_display,
-        gallery_images,
+        input_display,
+        mito_overlay_display,
+        membrane_overlay_display,
         metrics_text,
         download_files,
-        gr.update(value=show_mito, visible="mitochondria" in selected),
-        gr.update(value=show_mem, visible="membrane" in selected),
     )
-
-
-def regenerate_overlay(state, show_mito, show_mem):
-    """Regenerate overlay with toggled structure visibility."""
-    if state is None:
-        return None
-
-    selected = state.get("selected", [])
-    session_id = state.get("session_id", "")
-    state_dir = config.TEMP_DIR / "overlay_state" / session_id
-
-    # Load image and results from disk
-    gray_path = state_dir / "image_gray.npy"
-    if not gray_path.exists():
-        return None
-
-    image_gray = np.load(str(gray_path))
-    results = {}
-    for struct in selected:
-        bin_path = state_dir / f"binary_{struct}.npy"
-        if bin_path.exists():
-            results[struct] = {"binary": np.load(str(bin_path))}
-
-    show_structures = []
-    if show_mito and "mitochondria" in results:
-        show_structures.append("mitochondria")
-    if show_mem and "membrane" in results:
-        show_structures.append("membrane")
-
-    overlay_bgr = visualization.create_overlay(
-        image_gray, results, show_structures=show_structures
-    )
-    overlay_rgb = cv2.cvtColor(overlay_bgr, cv2.COLOR_BGR2RGB)
-    overlay_display = visualization.resize_for_display(overlay_rgb)
-    return overlay_display
 
 
 def _load_logo_svg():
@@ -303,33 +263,20 @@ def create_app():
 
             # Right column: results
             with gr.Column(scale=2):
-                # State for overlay re-rendering
-                state = gr.State(value=None)
-
-                # Overlay image
-                overlay_image = gr.Image(
-                    label="Overlay",
-                    interactive=False,
-                )
-
-                # Layer toggle checkboxes
+                # Three-panel display: Input | Mito overlay | Membrane overlay
                 with gr.Row():
-                    cb_mitochondria = gr.Checkbox(
-                        label="Mitochondria", value=True,
-                        elem_id="toggle_mitochondria",
+                    input_image = gr.Image(
+                        label="Input",
+                        interactive=False,
                     )
-                    cb_membrane = gr.Checkbox(
-                        label="Membrane", value=True,
-                        elem_id="toggle_membrane",
+                    mito_overlay = gr.Image(
+                        label="Mitochondria",
+                        interactive=False,
                     )
-
-                # Binary mask gallery (no prob maps)
-                gallery = gr.Gallery(
-                    label="Binary Masks",
-                    columns=3,
-                    height=250,
-                    object_fit="contain",
-                )
+                    membrane_overlay = gr.Image(
+                        label="Membrane",
+                        interactive=False,
+                    )
 
                 # Morphometric analysis
                 results_md = gr.Markdown(label="Morphometric Analysis")
@@ -346,27 +293,12 @@ def create_app():
             fn=process_image,
             inputs=[file_input, structures_input, threshold_input],
             outputs=[
-                state,
-                overlay_image,
-                gallery,
+                input_image,
+                mito_overlay,
+                membrane_overlay,
                 results_md,
                 download_files,
-                cb_mitochondria,
-                cb_membrane,
             ],
-        )
-
-        # Wire up layer toggle checkboxes
-        toggle_inputs = [state, cb_mitochondria, cb_membrane]
-        cb_mitochondria.change(
-            fn=regenerate_overlay,
-            inputs=toggle_inputs,
-            outputs=[overlay_image],
-        )
-        cb_membrane.change(
-            fn=regenerate_overlay,
-            inputs=toggle_inputs,
-            outputs=[overlay_image],
         )
 
         gr.HTML("""

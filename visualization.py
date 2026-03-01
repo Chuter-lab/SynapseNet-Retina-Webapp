@@ -40,6 +40,49 @@ def create_overlay(image_gray, results, alpha=None, show_structures=None):
     return blended
 
 
+def create_individual_overlay(image_gray, results, struct_name, alpha=None):
+    """Create a single-structure overlay on the grayscale image.
+
+    Args:
+        image_gray: 2D uint8 grayscale image
+        results: dict from inference.segment()
+        struct_name: which structure to overlay
+        alpha: overlay transparency (0-1)
+
+    Returns:
+        3-channel BGR overlay image (uint8)
+    """
+    return create_overlay(image_gray, results, alpha=alpha, show_structures=[struct_name])
+
+
+def create_display_panel(image_gray, results, selected):
+    """Create a combined side-by-side panel: Input | Mito overlay | Membrane overlay.
+
+    Args:
+        image_gray: 2D uint8 grayscale image
+        results: dict from inference.segment()
+        selected: list of selected structure names
+
+    Returns:
+        3-channel BGR combined panel image (uint8)
+    """
+    if image_gray.dtype != np.uint8:
+        img_u8 = (np.clip(image_gray, 0, 255)).astype(np.uint8)
+    else:
+        img_u8 = image_gray
+
+    base = cv2.cvtColor(img_u8, cv2.COLOR_GRAY2BGR)
+    panels = [base]
+
+    for struct in ("mitochondria", "membrane"):
+        if struct in selected and struct in results:
+            panels.append(create_individual_overlay(image_gray, results, struct))
+        else:
+            panels.append(base)
+
+    return np.hstack(panels)
+
+
 def create_panel(image_gray, results):
     """Create binary mask panels for each structure.
 
