@@ -9,10 +9,16 @@ UPLOAD_DIR = DATA_ROOT / "temp" / "uploads"
 TEMP_DIR = DATA_ROOT / "temp"
 LOG_DIR = DATA_ROOT / "logs"
 
-# Model checkpoints (populated by deploy script)
+# Model checkpoints — per-structure list (ensemble uses multiple)
 CHECKPOINTS = {
-    "mitochondria": MODELS_DIR / "retina_mitochondria_best.pt",
-    "membrane": MODELS_DIR / "retina_membrane_best.pt",
+    "mitochondria": [
+        MODELS_DIR / "retina_mitochondria_best.pt",       # run008 focal fine-tuned
+        MODELS_DIR / "retina_mitochondria_da.pt",          # domain adapted
+        MODELS_DIR / "retina_mitochondria_da_ft.pt",       # DA then fine-tuned
+    ],
+    "membrane": [
+        MODELS_DIR / "retina_membrane_best.pt",            # run008 focal fine-tuned
+    ],
 }
 
 # Model architecture
@@ -24,14 +30,25 @@ MODEL_PARAMS = {
     "final_activation": None,  # focal loss models have no built-in activation
 }
 
-# Inference
+# Inference — matches evaluation pipeline on node01
 DEFAULT_THRESHOLD = 0.5
-TILE_SIZE = 512
-TILE_OVERLAP = 128
+TILE_SIZE = 256       # patch size used during training and evaluation
+TILE_STRIDE = 192     # 75% of patch size (same as eval)
 GPU_ID = 0
 
+# TTA and ensemble settings (matching best combination optimization results)
+TTA_AUGMENTATIONS = {
+    "mitochondria": True,   # 7 geometric augmentations
+    "membrane": False,       # no TTA for best membrane result
+}
+
+ENSEMBLE_METHOD = {
+    "mitochondria": "max",  # element-wise max of prob maps from 3 models
+    "membrane": None,        # single model, no ensemble
+}
+
 # Structures and colors (BGR for OpenCV)
-# Per-structure thresholds from evaluation on retina validation data
+# Per-structure thresholds from combination optimization on retina validation data
 STRUCTURES = {
     "mitochondria": {"color": (0, 255, 0), "label": "Mitochondria", "min_area": 5000, "threshold": 0.35},
     "membrane": {"color": (255, 0, 0), "label": "Presynaptic Membrane", "min_area": 50000, "threshold": 0.4},
