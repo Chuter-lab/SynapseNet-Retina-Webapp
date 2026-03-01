@@ -223,6 +223,72 @@ def format_morphometrics_markdown(metrics):
     return "\n\n".join(sections)
 
 
+def format_morphometrics_html(metrics):
+    """Format morphometric metrics as side-by-side HTML tables.
+
+    Args:
+        metrics: dict from compute_morphometrics()
+
+    Returns:
+        HTML string with side-by-side per-structure tables
+    """
+    table_style = (
+        "border-collapse:collapse; width:100%; font-size:0.9em;"
+    )
+    th_style = (
+        "text-align:left; padding:6px 10px; border-bottom:2px solid #cbd5e1; "
+        "color:#334155; font-weight:600;"
+    )
+    td_style = "padding:5px 10px; border-bottom:1px solid #e2e8f0;"
+    td_val_style = td_style + " text-align:right; font-variant-numeric:tabular-nums;"
+
+    panels = []
+    for struct_name in ("mitochondria", "membrane"):
+        if struct_name not in metrics:
+            continue
+        m = metrics[struct_name]
+        label = config.STRUCTURES[struct_name]["label"]
+        color_bgr = config.STRUCTURES[struct_name]["color"]
+        color_hex = "#{:02x}{:02x}{:02x}".format(color_bgr[2], color_bgr[1], color_bgr[0])
+
+        rows_html = ""
+        row_data = [
+            ("Instances", f"{m['count']}"),
+            ("Total area (px)", f"{m['total_area_px']:,}"),
+            ("Coverage (%)", f"{m['coverage_pct']:.2f}"),
+            ("Mean area (px)", f"{m['mean_area']:.1f}"),
+            ("Min area (px)", f"{m['min_area']:,}"),
+            ("Max area (px)", f"{m['max_area']:,}"),
+            ("Std area (px)", f"{m['std_area']:.1f}"),
+        ]
+        if "mean_circularity" in m:
+            row_data.append(("Mean circularity", f"{m['mean_circularity']:.4f}"))
+        if "mean_aspect_ratio" in m:
+            row_data.append(("Mean aspect ratio", f"{m['mean_aspect_ratio']:.4f}"))
+        if "total_perimeter" in m:
+            row_data.append(("Total perimeter (px)", f"{m['total_perimeter']:.1f}"))
+
+        for metric, value in row_data:
+            rows_html += f'<tr><td style="{td_style}">{metric}</td><td style="{td_val_style}">{value}</td></tr>'
+
+        panel = f'''
+        <div style="flex:1; min-width:280px;">
+            <div style="font-weight:700; font-size:1em; margin-bottom:6px; color:{color_hex};">
+                {label}
+            </div>
+            <table style="{table_style}">
+                <thead><tr>
+                    <th style="{th_style}">Metric</th>
+                    <th style="{th_style} text-align:right;">Value</th>
+                </tr></thead>
+                <tbody>{rows_html}</tbody>
+            </table>
+        </div>'''
+        panels.append(panel)
+
+    return f'<div style="display:flex; gap:24px; flex-wrap:wrap;">{"".join(panels)}</div>'
+
+
 def export_metrics_csv(metrics, output_path):
     """Write morphometric metrics to CSV file.
 

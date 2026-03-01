@@ -9,6 +9,7 @@ import cv2
 import tifffile
 import time
 import zipfile
+import psutil
 from pathlib import Path
 from PIL import Image
 import torch
@@ -53,20 +54,46 @@ def _check_models():
     return available
 
 
-def _gpu_status_html():
-    """Generate GPU status HTML."""
+def _gpu_cpu_status_html():
+    """Generate GPU and CPU status HTML."""
+    parts = []
+
+    # GPU status
     try:
-        if not torch.cuda.is_available():
-            return '<span style="color:#e74c3c;">No GPU available</span>'
-        name = torch.cuda.get_device_name(config.GPU_ID)
-        mem_used = torch.cuda.memory_allocated(config.GPU_ID) / 1024**2
-        mem_total = torch.cuda.get_device_properties(config.GPU_ID).total_mem / 1024**2
-        return f'<span style="color:#2ecc71;">{name} ({mem_used:.0f}/{mem_total:.0f} MB)</span>'
+        if torch.cuda.is_available():
+            name = torch.cuda.get_device_name(config.GPU_ID)
+            mem_used = torch.cuda.memory_allocated(config.GPU_ID) / 1024**2
+            mem_peak = torch.cuda.max_memory_allocated(config.GPU_ID) / 1024**2
+            mem_total = torch.cuda.get_device_properties(config.GPU_ID).total_memory / 1024**2
+            gpu_pct = (mem_used / mem_total * 100) if mem_total > 0 else 0
+            parts.append(
+                f'<span style="color:#2ecc71;">GPU: {name}</span> — '
+                f'{mem_used:.0f} MB / {mem_total:.0f} MB ({gpu_pct:.0f}%) '
+                f'<span style="color:#94a3b8;">[peak: {mem_peak:.0f} MB]</span>'
+            )
+        else:
+            parts.append('<span style="color:#e74c3c;">No GPU available</span>')
     except Exception:
-        return '<span style="color:#95a5a6;">GPU status unavailable</span>'
+        parts.append('<span style="color:#95a5a6;">GPU status unavailable</span>')
+
+    # CPU status
+    try:
+        cpu_pct = psutil.cpu_percent(interval=0)
+        mem = psutil.virtual_memory()
+        cpu_mem_used = mem.used / 1024**3
+        cpu_mem_total = mem.total / 1024**3
+        parts.append(
+            f'CPU: {cpu_pct:.0f}% — '
+            f'RAM: {cpu_mem_used:.1f} / {cpu_mem_total:.1f} GB ({mem.percent:.0f}%)'
+        )
+    except Exception:
+        parts.append('<span style="color:#95a5a6;">CPU status unavailable</span>')
+
+    return '<br>'.join(parts)
 
 
-def process_image(file, structures, threshold, progress=gr.Progress()):
+def process_image(file, structures, mito_thresh, mito_min_area,
+                   mem_thresh, mem_min_area, progress=gr.Progress()):
     """Main processing function called by Gradio."""
     if file is None:
         raise gr.Error("Please upload an image first.")
@@ -96,10 +123,20 @@ def process_image(file, structures, threshold, progress=gr.Progress()):
     h, w = img_gray.shape
     progress(0.2, desc=f"Image loaded: {w}x{h}")
 
-    # Run segmentation (threshold=0 means use per-structure optimal)
+    # Build per-structure threshold and min_area dicts
+    thresholds = {}
+    min_areas = {}
+    if "mitochondria" in selected:
+        thresholds["mitochondria"] = mito_thresh
+        min_areas["mitochondria"] = int(mito_min_area)
+    if "membrane" in selected:
+        thresholds["membrane"] = mem_thresh
+        min_areas["membrane"] = int(mem_min_area)
+
+    # Run segmentation
     progress(0.3, desc="Running segmentation...")
-    seg_threshold = None if threshold == 0.0 else threshold
-    results = inference.segment(img_gray, structures=selected, threshold=seg_threshold)
+    results = inference.segment(img_gray, structures=selected,
+                                thresholds=thresholds, min_areas=min_areas)
 
     progress(0.8, desc="Creating visualization...")
 
@@ -125,15 +162,19 @@ def process_image(file, structures, threshold, progress=gr.Progress()):
             cv2.cvtColor(mem_bgr, cv2.COLOR_BGR2RGB)
         )
 
-    # Compute morphometric metrics
+    # Compute morphometric metrics — side-by-side HTML
     metrics = visualization.compute_morphometrics(results, img_gray.shape)
     elapsed = time.time() - t0
-    metrics_text = visualization.format_morphometrics_markdown(metrics)
-    metrics_text += f"\n\n**Processing time:** {elapsed:.1f}s | **Image size:** {w}x{h}"
+    metrics_html = visualization.format_morphometrics_html(metrics)
+    metrics_html += (
+        f'<div style="margin-top:12px; color:#94a3b8; font-size:0.85em;">'
+        f'Processing time: {elapsed:.1f}s &nbsp;|&nbsp; Image size: {w}x{h}'
+        f'</div>'
+    )
 
     # Build download files — descriptive names, TIF format for images
     download_files = []
-    zip_contents = []  # (path, arcname) for zip
+    zip_contents = []  # paths for zip
 
     # 1. Combined display panel
     panel_bgr = visualization.create_display_panel(img_gray, results, selected)
@@ -179,7 +220,7 @@ def process_image(file, structures, threshold, progress=gr.Progress()):
         input_display,
         mito_overlay_display,
         membrane_overlay_display,
-        metrics_text,
+        metrics_html,
         download_files,
     )
 
@@ -202,6 +243,10 @@ def create_app():
 
     logo_svg = _load_logo_svg()
 
+    # Per-structure defaults from config
+    mito_cfg = config.STRUCTURES["mitochondria"]
+    mem_cfg = config.STRUCTURES["membrane"]
+
     css = """
     :root {
         --color-accent: #2563eb;
@@ -217,6 +262,8 @@ def create_app():
     footer { display: none !important; }
     /* Hide Gradio PWA install banner */
     .pwa-install-container, .pwa-toast, [class*="pwa"] { display: none !important; }
+    /* Settings accordion styling */
+    .settings-section { margin-top: 4px; }
     """
 
     with gr.Blocks(title="THIRU") as app:
@@ -263,18 +310,37 @@ def create_app():
                     label="Structures to Segment",
                 )
 
-                threshold_input = gr.Slider(
-                    minimum=0.0,
-                    maximum=0.9,
-                    value=0.0,
-                    step=0.05,
-                    label="Prediction Threshold",
-                    info="0 = use per-structure optimal thresholds (recommended). Otherwise: lower = more sensitive, higher = more specific.",
-                )
+                # Per-structure settings
+                with gr.Accordion("Mitochondria Settings", open=False):
+                    mito_thresh = gr.Slider(
+                        minimum=0.05, maximum=0.9, value=mito_cfg["threshold"],
+                        step=0.05, label="Threshold",
+                        info="Lower = more sensitive, higher = more specific",
+                    )
+                    mito_min_area = gr.Number(
+                        value=mito_cfg["min_area"], label="Min Instance Area (px)",
+                        info="Instances smaller than this are removed",
+                        precision=0,
+                    )
+
+                with gr.Accordion("Membrane Settings", open=False):
+                    mem_thresh = gr.Slider(
+                        minimum=0.05, maximum=0.9, value=mem_cfg["threshold"],
+                        step=0.05, label="Threshold",
+                        info="Lower = more sensitive, higher = more specific",
+                    )
+                    mem_min_area = gr.Number(
+                        value=mem_cfg["min_area"], label="Min Instance Area (px)",
+                        info="Instances smaller than this are removed",
+                        precision=0,
+                    )
 
                 run_btn = gr.Button("Run Segmentation", variant="primary", size="lg")
 
-                gr.HTML(f'<div style="margin-top:12px;">{_gpu_status_html()}</div>')
+                # GPU/CPU status with auto-refresh
+                gpu_status = gr.HTML(
+                    value=f'<div style="margin-top:12px; font-size:0.85em; color:#64748b;">{_gpu_cpu_status_html()}</div>',
+                )
 
             # Right column: results
             with gr.Column(scale=2):
@@ -293,8 +359,8 @@ def create_app():
                         interactive=False,
                     )
 
-                # Morphometric analysis
-                results_md = gr.Markdown(label="Morphometric Analysis")
+                # Morphometric analysis (side-by-side HTML)
+                results_html = gr.HTML(label="Morphometric Analysis")
 
                 # Downloads
                 download_files = gr.File(
@@ -306,14 +372,22 @@ def create_app():
         # Wire up the run button
         run_btn.click(
             fn=process_image,
-            inputs=[file_input, structures_input, threshold_input],
+            inputs=[file_input, structures_input,
+                    mito_thresh, mito_min_area, mem_thresh, mem_min_area],
             outputs=[
                 input_image,
                 mito_overlay,
                 membrane_overlay,
-                results_md,
+                results_html,
                 download_files,
             ],
+        )
+
+        # GPU/CPU status auto-refresh every 3 seconds
+        gpu_timer = gr.Timer(value=3)
+        gpu_timer.tick(
+            fn=lambda: f'<div style="margin-top:12px; font-size:0.85em; color:#64748b;">{_gpu_cpu_status_html()}</div>',
+            outputs=[gpu_status],
         )
 
         gr.HTML("""
@@ -363,6 +437,32 @@ _onload_js = """
     }).observe(document.body, { childList: true, subtree: true });
 }
 """
+
+
+def _patch_login_favicon(app):
+    """Monkey-patch Gradio's login route to inject our favicon into the login page HTML."""
+    favicon_tag = '<link rel="icon" type="image/svg+xml" href="/favicon.svg?v=3">'
+    manifest_override = '<link rel="manifest" href="data:application/json,{}">'
+    inject = favicon_tag + manifest_override
+
+    # Find and wrap the login route handler
+    for route in app.app.router.routes:
+        path = getattr(route, "path", "")
+        if path in ("/login", "/login/"):
+            original_endpoint = route.endpoint
+
+            async def patched_login(request, _orig=original_endpoint):
+                response = await _orig(request)
+                if hasattr(response, "body"):
+                    body = response.body.decode("utf-8", errors="replace")
+                    if "</head>" in body:
+                        body = body.replace("</head>", inject + "</head>")
+                        from starlette.responses import HTMLResponse
+                        return HTMLResponse(content=body, status_code=response.status_code)
+                return response
+
+            route.endpoint = patched_login
+            break
 
 
 def main():
@@ -418,6 +518,9 @@ def main():
     app.app.router.routes.insert(0, Route("/manifest.json", empty_manifest))
     app.app.router.routes.insert(0, Route("/favicon.svg", serve_favicon))
     app.app.router.routes.insert(0, Route("/favicon.ico", serve_favicon_ico))
+
+    # Patch Gradio's login page to inject our favicon
+    _patch_login_favicon(app)
 
     # Block the main thread
     import threading
