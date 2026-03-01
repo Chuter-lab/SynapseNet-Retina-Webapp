@@ -340,17 +340,27 @@ _onload_js = """
         link.href = '/favicon.svg?v=3';
         document.head.appendChild(link);
     }
-    function removeManifest() {
+    function removePWA() {
+        // Remove manifest link (prevents "Open in app" / PWA install prompt)
         document.querySelectorAll('link[rel="manifest"]').forEach(el => el.remove());
+        // Remove any PWA-related meta tags
+        document.querySelectorAll('meta[name="mobile-web-app-capable"], meta[name="apple-mobile-web-app-capable"]').forEach(el => el.remove());
+        // Hide any Gradio PWA install banners
+        document.querySelectorAll('.pwa-install-container, .pwa-toast, [class*="pwa-"]').forEach(el => el.remove());
     }
     setFavicon();
-    removeManifest();
-    // Watch for Gradio re-injecting its favicon or manifest
+    removePWA();
+    // Watch for Gradio re-injecting its favicon, manifest, or PWA elements
     new MutationObserver(() => {
         const badFav = document.querySelector('link[rel*="icon"]:not([href*="/favicon.svg"])');
         const manifest = document.querySelector('link[rel="manifest"]');
-        if (badFav || manifest) { setFavicon(); removeManifest(); }
+        const pwa = document.querySelector('.pwa-install-container, [class*="pwa-"]');
+        if (badFav || manifest || pwa) { setFavicon(); removePWA(); }
     }).observe(document.head, { childList: true });
+    new MutationObserver(() => {
+        const pwa = document.querySelector('.pwa-install-container, [class*="pwa-"]');
+        if (pwa) { removePWA(); }
+    }).observe(document.body, { childList: true, subtree: true });
 }
 """
 
