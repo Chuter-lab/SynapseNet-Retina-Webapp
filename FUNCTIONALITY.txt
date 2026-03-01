@@ -159,8 +159,8 @@ consistency tested as independent toggle (with/without) on all 2D outputs.
 
 Architecture A — 2D U-Net (current pipeline, retained as-is):
   [ ] Re-run full 6-method × optimization matrix on new dataset
-  [ ] Each config tested with AND without post-hoc 3D consistency
-  [ ] Post-hoc methods: 3D connected components, instance tracking, z-smoothing
+  [x] Each config tested with AND without post-hoc 3D consistency (code in notebook)
+  [x] Post-hoc methods: 3D connected components, instance tracking, z-smoothing (implemented)
 
 Architecture B — 2.5D U-Net (adjacent slices as 3-channel input):
   [ ] Same 6-method × optimization matrix

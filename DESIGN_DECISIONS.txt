@@ -28,8 +28,17 @@ D3: PRETRAINED 3D MODEL ZERO-SHOT EVALUATION
 Decision: Run pretrained SynapseNet 3D models (mitochondria, vesicles_3d,
          compartments, ribbon, active_zone) zero-shot on full 7000x7000 montages
 Rationale: Establishes baseline — do pretrained cryo-ET models transfer at all?
-Result: All models produce essentially empty predictions (fg < 0.02%)
-Implication: Confirms complete domain gap; fine-tuning is mandatory
+Result: On 4 full montages (m0-m3), all models produce near-zero predictions:
+        vesicles_3d: fg 1.72–2.50% (non-zero but anatomically implausible)
+        mitochondria: fg 0.14–0.20% (near-zero)
+        compartments: fg 0.00% (zero; watershed post-processing ~12.5 min/stack)
+        ribbon: fg 0.00% (empty predictions trigger index error in extraction)
+        active_zone: fg 0.01–0.03% (near-zero)
+        Only vesicles_3d produced non-trivial foreground (~2.1% avg)
+        Total eval time: ~80 min (compartments watershed is bottleneck)
+Implication: Complete domain gap confirmed; fine-tuning is mandatory.
+        Vesicles model produces false positives, not meaningful detections.
+        See fig_A/fig_B in qualitative_eval/ for visual comparison.
 
 ================================================================================
 D4: micro-SAM ZERO-SHOT
@@ -94,8 +103,12 @@ Decision: Test pretrained 3D ribbon model both with and without vesicle
          segmentation passed as context (extra_segmentation parameter)
 Rationale: SynapseNet ribbon pipeline optionally uses vesicle predictions for
           post-processing. Compare: (a) ribbon alone, (b) ribbon + vesicle context
-Result: [PENDING — to be evaluated]
-Implication: Determines whether vesicle context improves 3D ribbon detection
+Result: Ribbon with vesicle context: fg=0.00% (pipeline returns empty result,
+        triggers index error in extraction). Without context: same outcome.
+        The ribbon model produces empty predictions regardless of vesicle context,
+        confirming complete domain gap for this structure type.
+Implication: Vesicle context does not help when base model cannot detect ribbon.
+        Both approaches equivalent (both produce zero predictions).
 
 ================================================================================
 D11: POST-HOC 3D CONSISTENCY ON 2D PREDICTIONS
@@ -108,7 +121,10 @@ Methods:
   a) 3D connected components: stack masks, filter by volume
   b) Instance tracking: link instances across z by overlap
   c) Z-smoothing: Gaussian filter on probability maps along z, re-threshold
-Result: [PENDING — to be evaluated with extended dataset]
+Result: [PENDING — code implemented in analysis_and_figures.ipynb Part C]
+        Framework tested on 3-section annotated crop (all 4 structures).
+        With only 3 sections, z-smoothing and instance tracking have limited
+        effect. Full evaluation requires extended dataset (≥8 sections).
 Implication: If 2D + post-hoc matches 3D, avoids expensive 3D training
 
 ================================================================================
