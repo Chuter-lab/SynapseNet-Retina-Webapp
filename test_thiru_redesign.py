@@ -3,7 +3,7 @@
 Tests:
 1. Login and upload test image
 2. Run segmentation
-3. Verify 3-panel display (Input, Mitochondria overlay, Membrane overlay)
+3. Verify 4-panel display (Input, Mitochondria overlay, Membrane overlay, Ribbon overlay)
 4. Verify morphometric metrics contain expected fields
 5. Verify downloads include all expected files (no heatmaps)
 """
@@ -97,7 +97,7 @@ def run_test():
             page.wait_for_function(
                 """() => {
                     const imgs = document.querySelectorAll('.image-container img, [data-testid="image"] img');
-                    return imgs.length >= 3 && imgs[0].src && imgs[0].src.length > 100;
+                    return imgs.length >= 4 && imgs[0].src && imgs[0].src.length > 100;
                 }""",
                 timeout=SEG_TIMEOUT,
             )
@@ -116,27 +116,28 @@ def run_test():
 
         page.screenshot(path=os.path.join(DOWNLOAD_DIR, "thiru_post_run.png"))
 
-        # ===================== 3-PANEL DISPLAY =====================
+        # ===================== 4-PANEL DISPLAY =====================
         log("=" * 60, results)
-        log("TEST 4: Three-panel display (Input, Mito, Membrane)", results)
+        log("TEST 4: Four-panel display (Input, Mito, Membrane, Ribbon)", results)
         page_html = page.content()
         page_text = page.inner_text("body")
 
         has_input = "Input" in page_html
         has_mito = "Mitochondria" in page_html
         has_membrane = "Membrane" in page_html
+        has_ribbon = "Ribbon" in page_html
 
         img_panels = page.locator(".image-container img, [data-testid='image'] img")
         panel_count = img_panels.count()
 
         log(f"  Image panels found: {panel_count}", results)
-        log(f"  Labels: Input={has_input}, Mitochondria={has_mito}, Membrane={has_membrane}", results)
+        log(f"  Labels: Input={has_input}, Mitochondria={has_mito}, Membrane={has_membrane}, Ribbon={has_ribbon}", results)
 
-        if panel_count >= 3 and has_input and has_mito and has_membrane:
-            log("  PASS: Three-panel display present", results)
+        if panel_count >= 4 and has_input and has_mito and has_membrane and has_ribbon:
+            log("  PASS: Four-panel display present", results)
             passed += 1
         else:
-            log("  FAIL: Expected 3 panels with correct labels", results)
+            log("  FAIL: Expected 4 panels with correct labels", results)
             failed += 1
 
         # Verify no probability maps or heatmaps visible
@@ -184,11 +185,13 @@ def run_test():
 
         html = page.content()
         expected_files = [
-            "display_panel.png",
-            "overlay_mitochondria.png",
-            "overlay_membrane.png",
-            "mask_mitochondria.tif",
-            "mask_membrane.tif",
+            "display_panel",
+            "overlay_Mitochondria",
+            "overlay_Presynaptic_Membrane",
+            "overlay_Synaptic_Ribbon",
+            "mask_Mitochondria",
+            "mask_Presynaptic_Membrane",
+            "mask_Synaptic_Ribbon",
             "metrics.csv",
         ]
         # Verify NO probability maps
@@ -208,7 +211,7 @@ def run_test():
         for f in found_unwanted:
             log(f"  UNWANTED: {f}", results)
 
-        if len(found_f) >= 5 and len(found_unwanted) == 0:
+        if len(found_f) >= 6 and len(found_unwanted) == 0:
             log(f"  PASS: {len(found_f)}/{len(expected_files)} files, no heatmaps", results)
             passed += 1
         else:

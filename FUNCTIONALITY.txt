@@ -1,21 +1,22 @@
 ================================================================================
 THIRU WEBAPP — FUNCTIONALITY CHECKLIST
 ================================================================================
-Last updated: 2026-02-28
+Last updated: 2026-03-01
 
 ================================================================================
 CORE SEGMENTATION
 ================================================================================
 [x] Mitochondria segmentation (UNet2d, focal loss fine-tuned)
 [x] Presynaptic membrane segmentation (UNet2d, focal loss fine-tuned)
+[x] Synaptic ribbon segmentation (UNet2d, focal loss fine-tuned)
 [x] Tiled inference (256px patches, stride 192, zero-padded per patch)
 [x] Min-max normalization to [0,1] matching training pipeline
 [x] torch.sigmoid activation (1-channel models), Sigmoid built-in (2-channel)
 [x] Channel 0 = foreground (SynapseNet convention)
-[x] Per-structure prediction thresholds (mito: 0.35, membrane: 0.40)
+[x] Per-structure prediction thresholds (mito: 0.35, membrane: 0.40, ribbon: 0.30)
 [x] Post-processing: morphological opening (disk radius=2)
 [x] Post-processing: connected component filtering with min instance area
-[x] Per-structure min instance area (mito: 5000px, membrane: 50000px)
+[x] Per-structure min instance area (mito: 5000px, membrane: 50000px, ribbon: 100px)
 [x] Model caching (loaded once, reused across runs)
 [x] TTA: 7 geometric augmentations for mitochondria (identity, hflip, vflip,
     hvflip, rot90, rot180, rot270) — averaged probability maps
@@ -27,8 +28,8 @@ CORE SEGMENTATION
 ================================================================================
 USER INTERFACE
 ================================================================================
-[x] Three-panel display: Input | Mitochondria overlay | Membrane overlay
-[x] Structure selection checkboxes (Mitochondria, Presynaptic Membrane)
+[x] Four-panel display: Input | Mitochondria overlay | Membrane overlay | Ribbon overlay
+[x] Structure selection checkboxes (Mitochondria, Presynaptic Membrane, Synaptic Ribbon)
 [x] Per-structure settings accordion (threshold slider, min area)
 [x] Scale settings accordion (nm/px, auto-detect or manual entry)
 [x] Run Segmentation button
@@ -49,6 +50,8 @@ SETTINGS & CONFIGURATION
 [x] Mitochondria min instance area (default 5000 px)
 [x] Membrane threshold slider (0.05-0.9, default 0.40)
 [x] Membrane min instance area (default 50000 px)
+[x] Ribbon threshold slider (0.05-0.9, default 0.30)
+[x] Ribbon min instance area (default 100 px)
 [x] Pixel scale input (nm/px): auto-detect from TIFF metadata or manual entry
 [x] Pixel units fallback when no scale available
 
@@ -59,8 +62,9 @@ METRICS & ANALYSIS
 [x] Total area (px or physical units)
 [x] Coverage percentage
 [x] Mean/min/max/std instance area
-[x] Mean circularity (mitochondria)
-[x] Mean aspect ratio (mitochondria)
+[x] Mean circularity (mitochondria, ribbon)
+[x] Mean aspect ratio (mitochondria, ribbon)
+[x] Mean length (ribbon)
 [x] Total perimeter (membrane)
 [x] Physical units (nm, nm^2) when pixel scale is provided
 [x] Metrics CSV export
@@ -69,11 +73,13 @@ METRICS & ANALYSIS
 DOWNLOADS
 ================================================================================
 [x] THIRU_results.zip (all files bundled)
-[x] THIRU_display_panel.tif (combined 3-panel view)
+[x] THIRU_display_panel.tif (combined 4-panel view)
 [x] THIRU_overlay_Mitochondria.tif
 [x] THIRU_overlay_Presynaptic_Membrane.tif
+[x] THIRU_overlay_Synaptic_Ribbon.tif
 [x] THIRU_mask_Mitochondria.tif (binary mask)
 [x] THIRU_mask_Presynaptic_Membrane.tif (binary mask)
+[x] THIRU_mask_Synaptic_Ribbon.tif (binary mask)
 [x] THIRU_metrics.csv
 [x] Descriptive filenames with THIRU_ prefix
 [x] TIF format for all images
@@ -107,11 +113,13 @@ MODEL CHECKPOINTS
 [x] retina_mitochondria_da.pt — domain adapted 2D UNet (2ch, Sigmoid)
 [x] retina_mitochondria_da_ft.pt — DA then fine-tuned (1ch, no sigmoid)
 [x] retina_membrane_best.pt — run008 focal fine-tuned (1ch, no sigmoid)
+[x] retina_ribbon_best.pt — focal fine-tuned (1ch, no sigmoid)
 [x] All models verified against node01 source checkpoints (weight checksums match)
 
 ================================================================================
 PLANNED / NOT YET IMPLEMENTED
 ================================================================================
+[x] Synaptic ribbon segmentation (model trained and deployed)
 [ ] Vesicle segmentation (model exists but removed from webapp for now)
 [ ] Batch processing (multiple images)
 [ ] Probability heatmap download option

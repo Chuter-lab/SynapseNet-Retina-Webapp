@@ -1,7 +1,7 @@
 """THIRU — TEM Histological Image Recognition for Ultrastructure.
 
 Gradio-based interface for retinal EM synapse segmentation.
-Segments mitochondria and presynaptic membrane.
+Segments mitochondria, presynaptic membrane, and synaptic ribbon.
 """
 import gradio as gr
 import numpy as np
@@ -196,7 +196,8 @@ def _gpu_cpu_status_html():
 
 
 def process_image(file, structures, mito_thresh, mito_min_area,
-                   mem_thresh, mem_min_area, pixel_scale, progress=gr.Progress()):
+                   mem_thresh, mem_min_area, ribbon_thresh, ribbon_min_area,
+                   pixel_scale, progress=gr.Progress()):
     """Main processing function called by Gradio."""
     if file is None:
         raise gr.Error("Please upload an image first.")
@@ -207,6 +208,7 @@ def process_image(file, structures, mito_thresh, mito_min_area,
     struct_map = {
         "Mitochondria": "mitochondria",
         "Presynaptic Membrane": "membrane",
+        "Synaptic Ribbon": "ribbon",
     }
     selected = [struct_map[s] for s in structures if s in struct_map]
 
@@ -245,6 +247,9 @@ def process_image(file, structures, mito_thresh, mito_min_area,
     if "membrane" in selected:
         thresholds["membrane"] = mem_thresh
         min_areas["membrane"] = int(mem_min_area)
+    if "ribbon" in selected:
+        thresholds["ribbon"] = ribbon_thresh
+        min_areas["ribbon"] = int(ribbon_min_area)
 
     # Run segmentation
     progress(0.3, desc="Running segmentation...")
@@ -264,6 +269,7 @@ def process_image(file, structures, mito_thresh, mito_min_area,
     # Create per-structure overlay images
     mito_overlay_display = None
     membrane_overlay_display = None
+    ribbon_overlay_display = None
     if "mitochondria" in selected:
         mito_bgr = visualization.create_individual_overlay(img_gray, results, "mitochondria")
         mito_overlay_display = visualization.resize_for_display(
@@ -273,6 +279,11 @@ def process_image(file, structures, mito_thresh, mito_min_area,
         mem_bgr = visualization.create_individual_overlay(img_gray, results, "membrane")
         membrane_overlay_display = visualization.resize_for_display(
             cv2.cvtColor(mem_bgr, cv2.COLOR_BGR2RGB)
+        )
+    if "ribbon" in selected:
+        rib_bgr = visualization.create_individual_overlay(img_gray, results, "ribbon")
+        ribbon_overlay_display = visualization.resize_for_display(
+            cv2.cvtColor(rib_bgr, cv2.COLOR_BGR2RGB)
         )
 
     # Compute morphometric metrics — side-by-side HTML
@@ -334,6 +345,7 @@ def process_image(file, structures, mito_thresh, mito_min_area,
         input_display,
         mito_overlay_display,
         membrane_overlay_display,
+        ribbon_overlay_display,
         metrics_html,
         download_files,
     )
@@ -360,6 +372,7 @@ def create_app():
     # Per-structure defaults from config
     mito_cfg = config.STRUCTURES["mitochondria"]
     mem_cfg = config.STRUCTURES["membrane"]
+    ribbon_cfg = config.STRUCTURES["ribbon"]
 
     css = """
     @import url('https://fonts.googleapis.com/css2?family=Space+Mono:ital,wght@0,400;0,700;1,400;1,700&display=swap');
@@ -423,8 +436,8 @@ def create_app():
                 )
 
                 structures_input = gr.CheckboxGroup(
-                    choices=["Mitochondria", "Presynaptic Membrane"],
-                    value=["Mitochondria", "Presynaptic Membrane"],
+                    choices=["Mitochondria", "Presynaptic Membrane", "Synaptic Ribbon"],
+                    value=["Mitochondria", "Presynaptic Membrane", "Synaptic Ribbon"],
                     label="Structures to Segment",
                 )
 
@@ -453,6 +466,18 @@ def create_app():
                         precision=0,
                     )
 
+                with gr.Accordion("Ribbon Settings", open=False):
+                    ribbon_thresh = gr.Slider(
+                        minimum=0.05, maximum=0.9, value=ribbon_cfg["threshold"],
+                        step=0.05, label="Threshold",
+                        info="Lower = more sensitive, higher = more specific",
+                    )
+                    ribbon_min_area = gr.Number(
+                        value=ribbon_cfg["min_area"], label="Min Instance Area (px)",
+                        info="Instances smaller than this are removed",
+                        precision=0,
+                    )
+
                 with gr.Accordion("Scale Settings", open=False):
                     pixel_scale = gr.Number(
                         value=0, label="Pixel Scale (nm/px)",
@@ -469,7 +494,7 @@ def create_app():
 
             # Right column: results
             with gr.Column(scale=2):
-                # Three-panel display: Input | Mito overlay | Membrane overlay
+                # Four-panel display: Input | Mito overlay | Membrane overlay | Ribbon overlay
                 with gr.Row():
                     input_image = gr.Image(
                         label="Input",
@@ -481,6 +506,10 @@ def create_app():
                     )
                     membrane_overlay = gr.Image(
                         label="Membrane",
+                        interactive=False,
+                    )
+                    ribbon_overlay = gr.Image(
+                        label="Ribbon",
                         interactive=False,
                     )
 
@@ -499,11 +528,13 @@ def create_app():
             fn=process_image,
             inputs=[file_input, structures_input,
                     mito_thresh, mito_min_area, mem_thresh, mem_min_area,
+                    ribbon_thresh, ribbon_min_area,
                     pixel_scale],
             outputs=[
                 input_image,
                 mito_overlay,
                 membrane_overlay,
+                ribbon_overlay,
                 results_html,
                 download_files,
             ],
