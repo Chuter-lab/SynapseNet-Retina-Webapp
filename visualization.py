@@ -117,18 +117,21 @@ def resize_for_display(image, max_size=None):
     return cv2.resize(image, (new_w, new_h), interpolation=cv2.INTER_AREA)
 
 
-def compute_morphometrics(results, image_shape):
+def compute_morphometrics(results, image_shape, scale_nm=None):
     """Compute extended morphometric metrics from segmentation results.
 
     Args:
         results: dict from inference.segment()
         image_shape: (height, width) of the original image
+        scale_nm: pixel scale in nm/px, or None for pixel units
 
     Returns:
-        dict keyed by structure name, each containing metric name→value pairs.
-        Also includes a "_cross" key for cross-structure metrics.
+        dict keyed by structure name, each containing metric name->value pairs.
     """
     total_pixels = image_shape[0] * image_shape[1]
+    # Scale factor: convert px^2 to physical area, px to physical length
+    area_factor = (scale_nm ** 2) if scale_nm else 1.0
+    len_factor = scale_nm if scale_nm else 1.0
     metrics = {}
 
     for struct_name, struct_result in results.items():
@@ -144,10 +147,10 @@ def compute_morphometrics(results, image_shape):
         if n_inst > 0:
             props = regionprops(instances)
             areas = np.array([p.area for p in props])
-            m["mean_area"] = round(float(np.mean(areas)), 2)
-            m["min_area"] = int(np.min(areas))
-            m["max_area"] = int(np.max(areas))
-            m["std_area"] = round(float(np.std(areas)), 2)
+            m["mean_area"] = round(float(np.mean(areas)) * area_factor, 2)
+            m["min_area"] = round(float(np.min(areas)) * area_factor, 2)
+            m["max_area"] = round(float(np.max(areas)) * area_factor, 2)
+            m["std_area"] = round(float(np.std(areas)) * area_factor, 2)
 
             # Circularity and aspect ratio for mitochondria
             if struct_name == "mitochondria":
@@ -169,7 +172,7 @@ def compute_morphometrics(results, image_shape):
             # Membrane-specific: total perimeter
             if struct_name == "membrane":
                 perimeters = [p.perimeter for p in props]
-                m["total_perimeter"] = round(float(np.sum(perimeters)), 2)
+                m["total_perimeter"] = round(float(np.sum(perimeters)) * len_factor, 2)
 
         else:
             m["mean_area"] = 0.0
@@ -223,15 +226,24 @@ def format_morphometrics_markdown(metrics):
     return "\n\n".join(sections)
 
 
-def format_morphometrics_html(metrics):
+def format_morphometrics_html(metrics, scale_nm=None):
     """Format morphometric metrics as side-by-side HTML tables.
 
     Args:
         metrics: dict from compute_morphometrics()
+        scale_nm: pixel scale in nm/px, or None for pixel units
 
     Returns:
         HTML string with side-by-side per-structure tables
     """
+    # Determine unit labels
+    if scale_nm:
+        area_unit = "nm\u00B2"
+        len_unit = "nm"
+    else:
+        area_unit = "px"
+        len_unit = "px"
+
     table_style = (
         "border-collapse:collapse; width:100%; font-size:0.9em; font-family:'Space Mono',monospace;"
     )
@@ -256,17 +268,17 @@ def format_morphometrics_html(metrics):
             ("Instances", f"{m['count']}"),
             ("Total area (px)", f"{m['total_area_px']:,}"),
             ("Coverage (%)", f"{m['coverage_pct']:.2f}"),
-            ("Mean area (px)", f"{m['mean_area']:.1f}"),
-            ("Min area (px)", f"{m['min_area']:,}"),
-            ("Max area (px)", f"{m['max_area']:,}"),
-            ("Std area (px)", f"{m['std_area']:.1f}"),
+            (f"Mean area ({area_unit})", f"{m['mean_area']:,.1f}"),
+            (f"Min area ({area_unit})", f"{m['min_area']:,.1f}"),
+            (f"Max area ({area_unit})", f"{m['max_area']:,.1f}"),
+            (f"Std area ({area_unit})", f"{m['std_area']:,.1f}"),
         ]
         if "mean_circularity" in m:
             row_data.append(("Mean circularity", f"{m['mean_circularity']:.4f}"))
         if "mean_aspect_ratio" in m:
             row_data.append(("Mean aspect ratio", f"{m['mean_aspect_ratio']:.4f}"))
         if "total_perimeter" in m:
-            row_data.append(("Total perimeter (px)", f"{m['total_perimeter']:.1f}"))
+            row_data.append((f"Total perimeter ({len_unit})", f"{m['total_perimeter']:,.1f}"))
 
         for metric, value in row_data:
             rows_html += f'<tr><td style="{td_style}">{metric}</td><td style="{td_val_style}">{value}</td></tr>'
