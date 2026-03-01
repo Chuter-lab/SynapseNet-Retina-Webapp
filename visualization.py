@@ -56,7 +56,7 @@ def create_individual_overlay(image_gray, results, struct_name, alpha=None):
 
 
 def create_display_panel(image_gray, results, selected):
-    """Create a combined side-by-side panel: Input | Mito overlay | Membrane overlay.
+    """Create a combined side-by-side panel: Input | per-structure overlays.
 
     Args:
         image_gray: 2D uint8 grayscale image
@@ -74,7 +74,7 @@ def create_display_panel(image_gray, results, selected):
     base = cv2.cvtColor(img_u8, cv2.COLOR_GRAY2BGR)
     panels = [base]
 
-    for struct in ("mitochondria", "membrane"):
+    for struct in config.STRUCTURES:
         if struct in selected and struct in results:
             panels.append(create_individual_overlay(image_gray, results, struct))
         else:
@@ -152,10 +152,11 @@ def compute_morphometrics(results, image_shape, scale_nm=None):
             m["max_area"] = round(float(np.max(areas)) * area_factor, 2)
             m["std_area"] = round(float(np.std(areas)) * area_factor, 2)
 
-            # Circularity and aspect ratio for mitochondria
-            if struct_name == "mitochondria":
+            # Circularity and aspect ratio for mitochondria and ribbon
+            if struct_name in ("mitochondria", "ribbon"):
                 circularities = []
                 aspect_ratios = []
+                major_lengths = []
                 for p in props:
                     if p.perimeter > 0:
                         circ = 4 * np.pi * p.area / (p.perimeter ** 2)
@@ -164,10 +165,14 @@ def compute_morphometrics(results, image_shape, scale_nm=None):
                     major = getattr(p, "axis_major_length", None) or getattr(p, "major_axis_length", 0)
                     if minor > 0:
                         aspect_ratios.append(major / minor)
+                    if major > 0:
+                        major_lengths.append(major)
                 if circularities:
                     m["mean_circularity"] = round(float(np.mean(circularities)), 4)
                 if aspect_ratios:
                     m["mean_aspect_ratio"] = round(float(np.mean(aspect_ratios)), 4)
+                if struct_name == "ribbon" and major_lengths:
+                    m["mean_length"] = round(float(np.mean(major_lengths)) * len_factor, 2)
 
             # Membrane-specific: total perimeter
             if struct_name == "membrane":
@@ -196,7 +201,7 @@ def format_morphometrics_markdown(metrics):
     """
     sections = []
 
-    for struct_name in ("mitochondria", "membrane"):
+    for struct_name in config.STRUCTURES:
         if struct_name not in metrics:
             continue
         m = metrics[struct_name]
@@ -218,6 +223,8 @@ def format_morphometrics_markdown(metrics):
             rows.append(f"| Mean circularity | {m['mean_circularity']:.4f} |")
         if "mean_aspect_ratio" in m:
             rows.append(f"| Mean aspect ratio | {m['mean_aspect_ratio']:.4f} |")
+        if "mean_length" in m:
+            rows.append(f"| Mean length (px) | {m['mean_length']:.1f} |")
         if "total_perimeter" in m:
             rows.append(f"| Total perimeter (px) | {m['total_perimeter']:.1f} |")
 
@@ -255,7 +262,7 @@ def format_morphometrics_html(metrics, scale_nm=None):
     td_val_style = td_style + " text-align:right; font-variant-numeric:tabular-nums;"
 
     panels = []
-    for struct_name in ("mitochondria", "membrane"):
+    for struct_name in config.STRUCTURES:
         if struct_name not in metrics:
             continue
         m = metrics[struct_name]
@@ -277,6 +284,8 @@ def format_morphometrics_html(metrics, scale_nm=None):
             row_data.append(("Mean circularity", f"{m['mean_circularity']:.4f}"))
         if "mean_aspect_ratio" in m:
             row_data.append(("Mean aspect ratio", f"{m['mean_aspect_ratio']:.4f}"))
+        if "mean_length" in m:
+            row_data.append((f"Mean length ({len_unit})", f"{m['mean_length']:,.1f}"))
         if "total_perimeter" in m:
             row_data.append((f"Total perimeter ({len_unit})", f"{m['total_perimeter']:,.1f}"))
 
@@ -317,7 +326,7 @@ def export_metrics_csv(metrics, output_path):
         writer = csv.writer(f)
         writer.writerow(["Structure", "Metric", "Value"])
 
-        for struct_name in ("mitochondria", "membrane"):
+        for struct_name in config.STRUCTURES:
             if struct_name not in metrics:
                 continue
             label = config.STRUCTURES[struct_name]["label"]

@@ -8,6 +8,7 @@ DEPLOY_LOCAL.txt
 temp/
 logs/
 submission/data/
+Test_Images_THIRU/
 submission/*.tiff
 submission/**/*.tiff
 submission/*.docx
