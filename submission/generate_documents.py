@@ -7,7 +7,6 @@ Generates:
   - tables/table1_method_comparison.docx
   - tables/table2_combination_optimization.docx
   - tables/table3_hyperparameters.docx
-  - tables/table4_ribbon_vesicle.docx
   - figures_and_tables.docx  (figures AND tables embedded with captions)
   - supplementary_methods.docx
 
@@ -171,7 +170,7 @@ REFERENCES = [
 
 
 def build_table1_rows():
-    """Table 1: 6 methods x 2 structures (mito + membrane benchmarking)."""
+    """Table 1: all methods x all structures."""
     method_order = [
         (9, "Unadapted"),
         (19, "Domain adapted"),
@@ -191,10 +190,22 @@ def build_table1_rows():
             else:
                 rows.append([label, struct.capitalize(),
                              "0.000", "0.000", "0.000", "0.000"])
+    # Ribbon (focal loss fine-tuned, best threshold)
+    ribbon_best = get_best("ribbon")
+    if ribbon_best:
+        rows.append(["Fine-tuned (focal loss)", "Ribbon",
+                     fmt(ribbon_best["best_dice"]), fmt(ribbon_best["best_iou"]),
+                     fmt(ribbon_best["best_precision"]), fmt(ribbon_best["best_recall"])])
+    # Vesicles (retrained + ribbon proximity)
+    vesicle_best = get_best("vesicles")
+    if vesicle_best:
+        rows.append(["Retrained + ribbon prox.", "Vesicles",
+                     fmt(vesicle_best["best_dice"]), fmt(vesicle_best["best_iou"]),
+                     fmt(vesicle_best["best_precision"]), fmt(vesicle_best["best_recall"])])
     return rows
 
 def build_table2_rows():
-    """Table 2: combination optimization results (mito + membrane)."""
+    """Table 2: combination optimization results (all 4 structures)."""
     rows = []
     for struct in ["Mitochondria", "Membrane"]:
         struct_key = struct.lower()
@@ -220,41 +231,20 @@ def build_table2_rows():
             best = phase_c[0]
             rows.append(["", "+ Ensemble", best["method"].replace("_", " "),
                          best["threshold"], "Yes", fmt(best["best_dice"])])
-    return rows
 
-
-def build_table4_rows():
-    """Table 4: Ribbon and vesicle best results."""
+    # Ribbon — threshold optimization only
     ribbon_best = get_best("ribbon")
-    vesicle_best = get_best("vesicles")
-    rows = []
     if ribbon_best:
-        rows.append([
-            "Synaptic ribbon",
-            "Fine-tuned (focal loss)",
-            ribbon_best["threshold_used"],
-            "No" if ribbon_best["tta_applied"] == "False" else "Yes",
-            "No" if ribbon_best["ensemble_applied"] == "False" else "Yes",
-            "N/A",
-            fmt(ribbon_best["best_dice"]),
-            fmt(ribbon_best["best_iou"]),
-            fmt(ribbon_best["best_precision"]),
-            fmt(ribbon_best["best_recall"]),
-        ])
+        rows.append(["Ribbon", "Threshold", "finetune (focal)",
+                     ribbon_best["threshold_used"], "No", fmt(ribbon_best["best_dice"])])
+
+    # Vesicles — threshold + ribbon proximity
+    vesicle_best = get_best("vesicles")
     if vesicle_best:
-        rows.append([
-            "Synaptic vesicles",
-            "Retrained + ribbon proximity",
-            vesicle_best["threshold_used"],
-            "No" if vesicle_best["tta_applied"] == "False" else "Yes",
-            "No" if vesicle_best["ensemble_applied"] == "False" else "Yes",
-            "50 px",
-            fmt(vesicle_best["best_dice"]),
-            fmt(vesicle_best["best_iou"]),
-            fmt(vesicle_best["best_precision"]),
-            fmt(vesicle_best["best_recall"]),
-        ])
+        rows.append(["Vesicles", "Thresh + ribbon prox", "retrain ribbon",
+                     vesicle_best["threshold_used"], "No", fmt(vesicle_best["best_dice"])])
     return rows
+
 
 
 TABLE1_HEADERS = ["Method", "Structure", "Dice", "IoU", "Precision", "Recall"]
@@ -275,8 +265,6 @@ TABLE3_ROWS = [
     ["Membrane weight", "2.0", "N/A", "N/A", "2.0", "N/A"],
 ]
 
-TABLE4_HEADERS = ["Structure", "Method", "Threshold", "TTA", "Ensemble",
-                  "Ribbon radius", "Dice", "IoU", "Precision", "Recall"]
 
 
 # ======================================================================
@@ -497,7 +485,7 @@ def generate_manuscript():
         f"per annotated region. Fine-tuning with focal loss (foreground weight = 50, "
         f"gamma = 2.0) and threshold optimization yielded a best Dice score of "
         f"{fmt(ribbon_best['best_dice'])} at threshold {ribbon_best['threshold_used']} "
-        f"(Table 4). The model achieved precision of "
+        f"(Table 1). The model achieved precision of "
         f"{fmt(ribbon_best['best_precision'])} and recall of "
         f"{fmt(ribbon_best['best_recall'])}, indicating balanced detection. "
         f"Neither TTA nor ensembling was applied, as the single fine-tuned model "
@@ -517,7 +505,7 @@ def generate_manuscript():
         f"vesicle predictions to within 50 px of the predicted ribbon location "
         f"using Euclidean distance transform filtering. This approach raised the "
         f"best Dice from 0.105 (without ribbon filtering) to "
-        f"{fmt(vesicle_best['best_dice'])} (Table 4), nearly doubling performance. "
+        f"{fmt(vesicle_best['best_dice'])} (Table 1), nearly doubling performance. "
         f"Instance-level F1 remained at 0.0, indicating the model detects vesicle "
         f"clusters rather than resolving individual vesicles."
     )
@@ -758,26 +746,25 @@ def generate_manuscript():
         "overlay: vesicles."
     )
     add_paragraph(doc,
-        "Figure 2. Method comparison. Dice coefficients for six deep learning "
-        "strategies across mitochondria and membrane. All methods evaluated at "
-        "default threshold (0.5) without TTA or ensembling."
+        "Figure 2. Method comparison. Dice coefficients for all methods across "
+        "four structures. Left section: six-method benchmark for mitochondria "
+        "and membrane at default threshold (0.5). Right section: best methods "
+        "for ribbon (focal loss fine-tuning) and vesicles (retrained model with "
+        "ribbon-proximity filtering)."
     )
     add_paragraph(doc,
         "Figure 3. Threshold optimization. Dice coefficient as a function of "
-        "binarization threshold for fine-tuned (focal loss) and DA+FT models. "
-        "Domain-adapted results (all 0.000) are omitted for clarity."
+        "binarization threshold for all four structures. Mitochondria and membrane "
+        "show fine-tuned (focal loss) and DA+FT methods. Ribbon shows focal loss "
+        "fine-tuning with best result at threshold 0.80. Vesicles show retrained "
+        "model with ribbon-proximity filtering (radius = 50 px), best at "
+        "threshold 0.05."
     )
     add_paragraph(doc,
-        "Figure 4. Optimization progression. Best Dice coefficient at each "
-        "optimization phase (threshold only, threshold + TTA, threshold + TTA + "
-        "ensemble) for mitochondria (green) and membrane (blue). Mitochondria "
-        "gained from all three phases; membrane peaked with threshold tuning alone."
-    )
-    add_paragraph(doc,
-        "Figure 5. Ribbon and vesicle segmentation. (a) Ribbon segmentation overlay "
-        "and threshold optimization curve. (b) Vesicle segmentation with and without "
-        "ribbon-proximity filtering, demonstrating the effect of anatomical constraint "
-        "on false-positive suppression."
+        "Figure 4. Final optimized performance. Dice coefficient, IoU, precision, "
+        "and recall for the best configuration of each structure. Annotations "
+        "indicate the optimization strategy used (ensemble vs. single model, "
+        "TTA, threshold optimization, ribbon-proximity filtering)."
     )
 
     doc.save(BASE_DIR / "manuscript.docx")
@@ -864,11 +851,13 @@ def generate_cover_letter():
 def generate_table1():
     doc = Document()
     set_doc_style(doc)
-    add_heading(doc, "Table 1. Segmentation performance across methods (mitochondria and membrane).", level=2)
+    add_heading(doc, "Table 1. Segmentation performance across methods and structures.", level=2)
     add_paragraph(doc,
         "Dice coefficient, intersection over union (IoU), pixel-level precision "
         "and recall for each method on the held-out test section (section 2). "
-        "All results at default threshold (0.5) unless noted.",
+        "Mitochondria and membrane results at default threshold (0.5); ribbon and "
+        "vesicle results at optimized thresholds (0.80 and 0.05, respectively). "
+        "Vesicle result includes ribbon-proximity filtering (radius = 50 px).",
         italic=True)
     make_table(doc, TABLE1_HEADERS, build_table1_rows())
     doc.save(TABLE_DIR / "table1_method_comparison.docx")
@@ -878,10 +867,11 @@ def generate_table1():
 def generate_table2():
     doc = Document()
     set_doc_style(doc)
-    add_heading(doc, "Table 2. Combination optimization results (mitochondria and membrane).", level=2)
+    add_heading(doc, "Table 2. Optimization results across all structures.", level=2)
     add_paragraph(doc,
-        "Best Dice coefficient at each optimization phase for mitochondria and "
-        "membrane. TTA: test-time augmentation with 7 geometric transforms.",
+        "Best Dice coefficient at each optimization phase. TTA: test-time augmentation "
+        "with 7 geometric transforms. Ribbon and vesicle results from threshold "
+        "optimization only (no TTA or ensemble applied).",
         italic=True)
     make_table(doc, TABLE2_HEADERS, build_table2_rows())
     doc.save(TABLE_DIR / "table2_combination_optimization.docx")
@@ -901,19 +891,6 @@ def generate_table3():
     print("Generated: tables/table3_hyperparameters.docx")
 
 
-def generate_table4():
-    doc = Document()
-    set_doc_style(doc)
-    add_heading(doc, "Table 4. Ribbon and vesicle segmentation performance.", level=2)
-    add_paragraph(doc,
-        "Best Dice coefficient for synaptic ribbon (focal loss fine-tuning) and "
-        "synaptic vesicles (retrained model with ribbon-proximity post-processing). "
-        "Ribbon radius indicates the Euclidean distance threshold for vesicle filtering.",
-        italic=True)
-    make_table(doc, TABLE4_HEADERS, build_table4_rows())
-    doc.save(TABLE_DIR / "table4_ribbon_vesicle.docx")
-    print("Generated: tables/table4_ribbon_vesicle.docx")
-
 
 # ======================================================================
 # 4. FIGURES AND TABLES COMBINED
@@ -930,18 +907,14 @@ def generate_figures_and_tables():
          "Left: raw EM image; Center: ground truth annotation overlay; "
          "Right: best model prediction overlay."),
         ("fig2_method_comparison.png",
-         "Figure 2. Method comparison showing Dice coefficients for six deep "
-         "learning strategies across mitochondria and membrane."),
+         "Figure 2. Method comparison. Dice coefficients for all methods across "
+         "four structures, with six-method benchmark (left) and extended "
+         "structures (right)."),
         ("fig3_threshold_sweep.png",
-         "Figure 3. Threshold optimization curves for fine-tuned (focal loss) "
-         "and DA+FT models across mitochondria and membrane."),
+         "Figure 3. Threshold optimization curves for all four structures."),
         ("fig4_optimization_progression.png",
-         "Figure 4. Optimization progression showing best Dice at each phase "
-         "for mitochondria and membrane."),
-        ("fig5_ribbon_vesicle.png",
-         "Figure 5. Ribbon and vesicle segmentation. (a) Ribbon overlay and "
-         "threshold curve. (b) Vesicle segmentation with and without "
-         "ribbon-proximity filtering."),
+         "Figure 4. Final optimized performance (Dice, IoU, precision, recall) "
+         "for all four structures."),
     ]
 
     for fname, caption in figs:
@@ -954,19 +927,20 @@ def generate_figures_and_tables():
 
     # -- Embed tables with captions --
     add_paragraph(doc,
-        "Table 1. Segmentation performance across methods (mitochondria and membrane).",
+        "Table 1. Segmentation performance across methods and structures.",
         bold=True)
     add_paragraph(doc,
-        "Dice coefficient, IoU, precision, and recall on the held-out test section.",
+        "Dice, IoU, precision, and recall on held-out test section. Includes all "
+        "four structures with best methods for ribbon and vesicles.",
         italic=True)
     make_table(doc, TABLE1_HEADERS, build_table1_rows())
     doc.add_page_break()
 
     add_paragraph(doc,
-        "Table 2. Combination optimization results (mitochondria and membrane).",
+        "Table 2. Optimization results across all structures.",
         bold=True)
     add_paragraph(doc,
-        "Best Dice at each optimization phase for mitochondria and membrane.",
+        "Best Dice at each optimization phase for all four structures.",
         italic=True)
     make_table(doc, TABLE2_HEADERS, build_table2_rows())
     doc.add_page_break()
@@ -978,15 +952,6 @@ def generate_figures_and_tables():
         "All methods used SynapseNet 2D U-Net (depth = 4, initial_features = 32).",
         italic=True)
     make_table(doc, TABLE3_HEADERS, TABLE3_ROWS)
-    doc.add_page_break()
-
-    add_paragraph(doc,
-        "Table 4. Ribbon and vesicle segmentation performance.",
-        bold=True)
-    add_paragraph(doc,
-        "Best results for synaptic ribbon and vesicles with ribbon-proximity filtering.",
-        italic=True)
-    make_table(doc, TABLE4_HEADERS, build_table4_rows())
 
     doc.save(BASE_DIR / "figures_and_tables.docx")
     print("Generated: figures_and_tables.docx")
@@ -1132,7 +1097,6 @@ if __name__ == "__main__":
     generate_table1()
     generate_table2()
     generate_table3()
-    generate_table4()
     generate_figures_and_tables()
     generate_supplementary()
     print("=" * 50)
