@@ -26,8 +26,8 @@ MODEL_PARAMS = {
 
 # Inference
 DEFAULT_THRESHOLD = 0.5
-TILE_SIZE = 256
-TILE_OVERLAP = 32
+TILE_SIZE = 512
+TILE_OVERLAP = 128
 GPU_ID = 0
 
 # Structures and colors (BGR for OpenCV)

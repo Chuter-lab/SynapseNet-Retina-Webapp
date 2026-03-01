@@ -86,15 +86,14 @@ def tiled_inference(model, img_norm, device, patch_size=256, has_sigmoid=False, 
     return pred.astype(np.float32)
 
 
-def postprocess(prob_map, structure, threshold=None):
+def postprocess(prob_map, structure, threshold=None, min_area=None):
     """Threshold, morphological cleanup, and instance labeling."""
     if threshold is None:
-        # Use per-structure optimal threshold if available, else global default
         threshold = config.STRUCTURES.get(structure, {}).get("threshold", config.DEFAULT_THRESHOLD)
+    if min_area is None:
+        min_area = config.STRUCTURES[structure]["min_area"]
 
     binary = prob_map > threshold
-    struct_cfg = config.STRUCTURES[structure]
-    min_area = struct_cfg["min_area"]
 
     # Morphological opening
     selem = disk(2)
@@ -112,19 +111,24 @@ def postprocess(prob_map, structure, threshold=None):
     return final_binary, final_labeled
 
 
-def segment(image_gray, structures=None, threshold=None):
+def segment(image_gray, structures=None, thresholds=None, min_areas=None):
     """Run full segmentation pipeline.
 
     Args:
         image_gray: 2D numpy array (uint8 or float), grayscale EM image
         structures: list of structure names, or None for all
-        threshold: prediction threshold (0-1)
+        thresholds: dict of {structure: threshold} or None for per-structure defaults
+        min_areas: dict of {structure: min_area} or None for per-structure defaults
 
     Returns:
         dict of {structure: {"prob_map", "binary", "instances", "n_instances"}}
     """
     if structures is None:
         structures = list(config.STRUCTURES.keys())
+    if thresholds is None:
+        thresholds = {}
+    if min_areas is None:
+        min_areas = {}
 
     # Normalize to 0-1 float
     if image_gray.dtype == np.uint8:
@@ -146,7 +150,9 @@ def segment(image_gray, structures=None, threshold=None):
             has_sigmoid=has_sigmoid,
             out_channels=out_channels,
         )
-        binary, instances = postprocess(prob_map, struct, threshold)
+        thresh = thresholds.get(struct)
+        min_a = min_areas.get(struct)
+        binary, instances = postprocess(prob_map, struct, threshold=thresh, min_area=min_a)
         results[struct] = {
             "prob_map": prob_map,
             "binary": binary,
