@@ -8,9 +8,11 @@ Matches the combination optimization pipeline from node01 exactly:
 - TTA: 7 geometric augmentations (for mitochondria)
 - Ensemble: element-wise max of multiple models (for mitochondria)
 - Post-processing: morphological opening + min area filtering
+- Vesicle ribbon-proximity masking: predictions masked to within N px of ribbon
 """
 import numpy as np
 import torch
+from scipy.ndimage import distance_transform_edt
 from unet import UNet2d
 from skimage.morphology import disk, opening
 from skimage.measure import label as skimage_label
@@ -177,17 +179,33 @@ def postprocess(prob_map, structure, threshold=None, min_area=None):
     return final_binary, final_labeled
 
 
-def segment(image_gray, structures=None, thresholds=None, min_areas=None):
+def _apply_ribbon_proximity_mask(prob_map, ribbon_binary, radius_px):
+    """Mask probability map to within radius_px of ribbon foreground.
+
+    Used for vesicle segmentation — vesicles cluster near the synaptic ribbon.
+    """
+    if not np.any(ribbon_binary):
+        return prob_map
+    dist = distance_transform_edt(~ribbon_binary)
+    proximity_mask = dist <= radius_px
+    return prob_map * proximity_mask
+
+
+def segment(image_gray, structures=None, thresholds=None, min_areas=None,
+            vesicle_ribbon_radius=None):
     """Run full segmentation pipeline matching evaluation code on node01.
 
     For mitochondria: ensemble of 3 models with TTA and element-wise max.
     For membrane: single model, no TTA.
+    For vesicles: single model, ribbon-proximity masking (predictions masked to
+                  within N px of predicted ribbon).
 
     Args:
         image_gray: 2D numpy array (uint8 or float), grayscale EM image
         structures: list of structure names, or None for all
         thresholds: dict of {structure: threshold} or None for per-structure defaults
         min_areas: dict of {structure: min_area} or None for per-structure defaults
+        vesicle_ribbon_radius: proximity radius in px for vesicle masking, or None for default
 
     Returns:
         dict of {structure: {"prob_map", "binary", "instances", "n_instances"}}
@@ -198,12 +216,27 @@ def segment(image_gray, structures=None, thresholds=None, min_areas=None):
         thresholds = {}
     if min_areas is None:
         min_areas = {}
+    if vesicle_ribbon_radius is None:
+        vesicle_ribbon_radius = config.VESICLE_RIBBON_RADIUS
 
     # Min-max normalize to [0,1] — matches training pipeline
     img_norm = _normalize(image_gray)
 
+    # If vesicles are selected, ensure ribbon is also processed (needed for masking)
+    need_ribbon_for_vesicles = "vesicles" in structures
+    process_order = list(structures)
+    if need_ribbon_for_vesicles and "ribbon" not in process_order:
+        # Temporarily add ribbon so we can use it for masking
+        process_order.insert(0, "ribbon")
+
+    # Ensure ribbon is processed before vesicles
+    if "ribbon" in process_order and "vesicles" in process_order:
+        process_order.remove("ribbon")
+        vesicle_idx = process_order.index("vesicles")
+        process_order.insert(vesicle_idx, "ribbon")
+
     results = {}
-    for struct in structures:
+    for struct in process_order:
         if struct not in config.CHECKPOINTS:
             continue
 
@@ -233,6 +266,13 @@ def segment(image_gray, structures=None, thresholds=None, min_areas=None):
             else:
                 prob_map = np.maximum.reduce(prob_maps)
 
+        # For vesicles: apply ribbon-proximity masking
+        if struct == "vesicles" and "ribbon" in results:
+            ribbon_binary = results["ribbon"]["binary"]
+            prob_map = _apply_ribbon_proximity_mask(
+                prob_map, ribbon_binary, vesicle_ribbon_radius
+            )
+
         thresh = thresholds.get(struct)
         min_a = min_areas.get(struct)
         binary, instances = postprocess(prob_map, struct, threshold=thresh, min_area=min_a)
@@ -242,5 +282,9 @@ def segment(image_gray, structures=None, thresholds=None, min_areas=None):
             "instances": instances,
             "n_instances": instances.max(),
         }
+
+    # Remove ribbon from results if it was only added for vesicle masking
+    if need_ribbon_for_vesicles and "ribbon" not in structures and "ribbon" in results:
+        del results["ribbon"]
 
     return results

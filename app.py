@@ -1,7 +1,7 @@
 """THIRU — TEM Histological Image Recognition for Ultrastructure.
 
 Gradio-based interface for retinal EM synapse segmentation.
-Segments mitochondria, presynaptic membrane, and synaptic ribbon.
+Segments mitochondria, presynaptic membrane, synaptic ribbon, and synaptic vesicles.
 """
 import gradio as gr
 import numpy as np
@@ -197,6 +197,7 @@ def _gpu_cpu_status_html():
 
 def process_image(file, structures, mito_thresh, mito_min_area,
                    mem_thresh, mem_min_area, ribbon_thresh, ribbon_min_area,
+                   vesicle_thresh, vesicle_min_area, vesicle_ribbon_radius,
                    pixel_scale, progress=gr.Progress()):
     """Main processing function called by Gradio."""
     if file is None:
@@ -209,6 +210,7 @@ def process_image(file, structures, mito_thresh, mito_min_area,
         "Mitochondria": "mitochondria",
         "Presynaptic Membrane": "membrane",
         "Synaptic Ribbon": "ribbon",
+        "Synaptic Vesicles": "vesicles",
     }
     selected = [struct_map[s] for s in structures if s in struct_map]
 
@@ -218,6 +220,9 @@ def process_image(file, structures, mito_thresh, mito_min_area,
     # Check model availability
     available = _check_models()
     missing = [s for s in selected if not available.get(s, False)]
+    # Vesicles also need ribbon model for proximity masking
+    if "vesicles" in selected and not available.get("ribbon", False):
+        missing.append("ribbon (required for vesicle proximity masking)")
     if missing:
         raise gr.Error(f"Models not found for: {', '.join(missing)}. Check deployment.")
 
@@ -250,11 +255,15 @@ def process_image(file, structures, mito_thresh, mito_min_area,
     if "ribbon" in selected:
         thresholds["ribbon"] = ribbon_thresh
         min_areas["ribbon"] = int(ribbon_min_area)
+    if "vesicles" in selected:
+        thresholds["vesicles"] = vesicle_thresh
+        min_areas["vesicles"] = int(vesicle_min_area)
 
     # Run segmentation
     progress(0.3, desc="Running segmentation...")
     results = inference.segment(img_gray, structures=selected,
-                                thresholds=thresholds, min_areas=min_areas)
+                                thresholds=thresholds, min_areas=min_areas,
+                                vesicle_ribbon_radius=int(vesicle_ribbon_radius))
 
     progress(0.8, desc="Creating visualization...")
 
@@ -270,6 +279,7 @@ def process_image(file, structures, mito_thresh, mito_min_area,
     mito_overlay_display = None
     membrane_overlay_display = None
     ribbon_overlay_display = None
+    vesicle_overlay_display = None
     if "mitochondria" in selected:
         mito_bgr = visualization.create_individual_overlay(img_gray, results, "mitochondria")
         mito_overlay_display = visualization.resize_for_display(
@@ -284,6 +294,11 @@ def process_image(file, structures, mito_thresh, mito_min_area,
         rib_bgr = visualization.create_individual_overlay(img_gray, results, "ribbon")
         ribbon_overlay_display = visualization.resize_for_display(
             cv2.cvtColor(rib_bgr, cv2.COLOR_BGR2RGB)
+        )
+    if "vesicles" in selected and "vesicles" in results:
+        ves_bgr = visualization.create_individual_overlay(img_gray, results, "vesicles")
+        vesicle_overlay_display = visualization.resize_for_display(
+            cv2.cvtColor(ves_bgr, cv2.COLOR_BGR2RGB)
         )
 
     # Compute morphometric metrics — side-by-side HTML
@@ -346,6 +361,7 @@ def process_image(file, structures, mito_thresh, mito_min_area,
         mito_overlay_display,
         membrane_overlay_display,
         ribbon_overlay_display,
+        vesicle_overlay_display,
         metrics_html,
         download_files,
     )
@@ -373,6 +389,7 @@ def create_app():
     mito_cfg = config.STRUCTURES["mitochondria"]
     mem_cfg = config.STRUCTURES["membrane"]
     ribbon_cfg = config.STRUCTURES["ribbon"]
+    vesicle_cfg = config.STRUCTURES["vesicles"]
 
     css = """
     @import url('https://fonts.googleapis.com/css2?family=Space+Mono:ital,wght@0,400;0,700;1,400;1,700&display=swap');
@@ -436,8 +453,8 @@ def create_app():
                 )
 
                 structures_input = gr.CheckboxGroup(
-                    choices=["Mitochondria", "Presynaptic Membrane", "Synaptic Ribbon"],
-                    value=["Mitochondria", "Presynaptic Membrane", "Synaptic Ribbon"],
+                    choices=["Mitochondria", "Presynaptic Membrane", "Synaptic Ribbon", "Synaptic Vesicles"],
+                    value=["Mitochondria", "Presynaptic Membrane", "Synaptic Ribbon", "Synaptic Vesicles"],
                     label="Structures to Segment",
                 )
 
@@ -478,6 +495,23 @@ def create_app():
                         precision=0,
                     )
 
+                with gr.Accordion("Vesicle Settings", open=False):
+                    vesicle_thresh = gr.Slider(
+                        minimum=0.01, maximum=0.5, value=vesicle_cfg["threshold"],
+                        step=0.01, label="Threshold",
+                        info="Lower = more sensitive, higher = more specific",
+                    )
+                    vesicle_min_area = gr.Number(
+                        value=vesicle_cfg["min_area"], label="Min Instance Area (px)",
+                        info="Instances smaller than this are removed",
+                        precision=0,
+                    )
+                    vesicle_ribbon_radius = gr.Slider(
+                        minimum=10, maximum=200, value=config.VESICLE_RIBBON_RADIUS,
+                        step=10, label="Ribbon Proximity Radius (px)",
+                        info="Vesicle predictions are masked to within this distance of the predicted ribbon",
+                    )
+
                 with gr.Accordion("Scale Settings", open=False):
                     pixel_scale = gr.Number(
                         value=0, label="Pixel Scale (nm/px)",
@@ -494,7 +528,7 @@ def create_app():
 
             # Right column: results
             with gr.Column(scale=2):
-                # Four-panel display: Input | Mito overlay | Membrane overlay | Ribbon overlay
+                # Five-panel display: Input | Mito | Membrane | Ribbon | Vesicles
                 with gr.Row():
                     input_image = gr.Image(
                         label="Input",
@@ -510,6 +544,10 @@ def create_app():
                     )
                     ribbon_overlay = gr.Image(
                         label="Ribbon",
+                        interactive=False,
+                    )
+                    vesicle_overlay = gr.Image(
+                        label="Vesicles",
                         interactive=False,
                     )
 
@@ -529,12 +567,14 @@ def create_app():
             inputs=[file_input, structures_input,
                     mito_thresh, mito_min_area, mem_thresh, mem_min_area,
                     ribbon_thresh, ribbon_min_area,
+                    vesicle_thresh, vesicle_min_area, vesicle_ribbon_radius,
                     pixel_scale],
             outputs=[
                 input_image,
                 mito_overlay,
                 membrane_overlay,
                 ribbon_overlay,
+                vesicle_overlay,
                 results_html,
                 download_files,
             ],
