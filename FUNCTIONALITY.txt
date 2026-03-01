@@ -148,26 +148,39 @@ PLANNED / NOT YET IMPLEMENTED
 [ ] Academic email gating
 
 ================================================================================
-PLANNED: 3D-AWARE PIPELINE (NEXT DATASET)
+PLANNED: EXTENDED BENCHMARKING WITH 3D METHODS (NEXT DATASET)
 ================================================================================
 See PLAN_3D_PIPELINE.txt for full details.
 
-Phase 1 — Post-hoc 3D consistency (no retraining):
-  [ ] 3D connected components on stacked 2D predictions
-  [ ] Instance tracking across z-slices
-  [ ] Z-smoothing of probability maps
-  [ ] Update 3D render with correct physical z-scale (54 nm sections)
+All existing 2D methods retained. Three architecture classes benchmarked with
+the SAME method matrix (unadapted, DA, Dice FT, focal FT, DA+FT, micro-SAM)
+and combination optimizations (threshold, TTA, ensemble). Post-hoc 3D
+consistency tested as independent toggle (with/without) on all 2D outputs.
+
+Architecture A — 2D U-Net (current pipeline, retained as-is):
+  [ ] Re-run full 6-method × optimization matrix on new dataset
+  [ ] Each config tested with AND without post-hoc 3D consistency
+  [ ] Post-hoc methods: 3D connected components, instance tracking, z-smoothing
+
+Architecture B — 2.5D U-Net (adjacent slices as 3-channel input):
+  [ ] Same 6-method × optimization matrix
+  [ ] in_channels=3 (slice N-1, N, N+1); minimal architecture change
+
+Architecture C — 3D AnisotropicUNet (native volumetric):
+  [ ] Same method matrix (5 methods; micro-SAM N/A for 3D)
+  [ ] Voxel size (54, 5, 5) nm for anisotropic kernel selection
+  [ ] Requires >= 8 annotated serial sections
+
+Evaluation:
+  [ ] 2D per-slice metrics (Dice, IoU, precision, recall, instance F1)
+  [ ] 3D volumetric metrics (volumetric Dice, cross-slice consistency)
   [ ] Physical-unit morphometrics (nm, nm², nm³)
+  [ ] Comprehensive table: architecture × method × structure × 3D-CC toggle
 
-Phase 2 — 3D-aware models (requires >= 8 annotated serial sections):
-  [ ] 2.5D input: adjacent slices as multi-channel input to 2D U-Net
-  [ ] 3D AnisotropicUNet: fine-tune SynapseNet pretrained 3D model
-  [ ] Voxel size config: (54, 5, 5) nm for anisotropic kernel selection
-  [ ] 3D evaluation: volumetric Dice, 3D instance metrics
-
-Phase 3 — Webapp integration:
+Webapp integration:
   [ ] Stack upload (multi-TIFF or folder of serial sections)
-  [ ] Inference mode toggle: 2D / 2.5D / 3D
+  [ ] Architecture selection toggle (2D / 2.5D / 3D)
+  [ ] 3D post-processing options (with/without toggle)
   [ ] Interactive 3D visualization (three.js or similar)
   [ ] 3D morphometrics: volume, surface area, 3D aspect ratio
   [ ] 3D mesh export (OBJ/STL), volumetric masks (OME-TIFF)
