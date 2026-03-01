@@ -510,6 +510,19 @@ def generate_manuscript():
         f"clusters rather than resolving individual vesicles."
     )
 
+    add_heading(doc, "Three-dimensional reconstruction of annotated structures", level=2)
+    add_paragraph(doc,
+        "To visualize the spatial relationships among the four annotated structures, "
+        "we generated three-dimensional reconstructions from the serial section "
+        "ground truth annotations using marching cubes mesh extraction (Fig. 5). "
+        "The reconstructions reveal the spatial arrangement of mitochondria, "
+        "presynaptic membrane, synaptic ribbon, and vesicle clusters within the "
+        "annotated volume. The combined view shows the ribbon and vesicle cluster "
+        "adjacent to the presynaptic membrane, with mitochondria positioned nearby, "
+        "consistent with the known ultrastructural organization of retinal ribbon "
+        "synapses."
+    )
+
     # -- Discussion (no subheadings per Sci Reports) --
     add_heading(doc, "Discussion", level=1)
 
@@ -766,6 +779,13 @@ def generate_manuscript():
         "indicate the optimization strategy used (ensemble vs. single model, "
         "TTA, threshold optimization, ribbon-proximity filtering)."
     )
+    add_paragraph(doc,
+        "Figure 5. Three-dimensional reconstruction of ground truth annotations. "
+        "Mesh surfaces extracted via marching cubes from three serial TEM sections "
+        "for mitochondria (green), presynaptic membrane (blue), synaptic ribbon "
+        "(magenta), and synaptic vesicles (orange). Individual structure panels "
+        "and a combined view are shown."
+    )
 
     doc.save(BASE_DIR / "manuscript.docx")
     print("Generated: manuscript.docx")
@@ -915,6 +935,11 @@ def generate_figures_and_tables():
         ("fig4_optimization_progression.png",
          "Figure 4. Final optimized performance (Dice, IoU, precision, recall) "
          "for all four structures."),
+        ("fig5_3d_render.png",
+         "Figure 5. Three-dimensional reconstruction of ground truth annotations. "
+         "Mesh surfaces extracted via marching cubes from three serial TEM sections "
+         "for mitochondria (green), presynaptic membrane (blue), synaptic ribbon "
+         "(magenta), and synaptic vesicles (orange)."),
     ]
 
     for fname, caption in figs:

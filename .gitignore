@@ -8,8 +8,14 @@ DEPLOY_LOCAL.txt
 temp/
 logs/
 submission/data/
+SynapseNet-Retina-Submission/data/
 Test_Images_THIRU/
 submission/*.tiff
 submission/**/*.tiff
 submission/*.docx
 submission/**/*.docx
+SynapseNet-Retina-Submission/*.tiff
+SynapseNet-Retina-Submission/**/*.tiff
+SynapseNet-Retina-Submission/*.docx
+SynapseNet-Retina-Submission/**/*.docx
+.DS_Store
