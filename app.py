@@ -10,6 +10,8 @@ import tifffile
 import time
 import zipfile
 import psutil
+import threading
+import logging
 from pathlib import Path
 from PIL import Image
 import torch
@@ -19,12 +21,113 @@ import inference
 import visualization
 
 STATIC_DIR = Path(__file__).parent / "static"
+log = logging.getLogger("thiru")
+
+# Cleanup intervals
+UPLOAD_MAX_AGE_HOURS = 24
+RESULT_MAX_AGE_DAYS = 30
+CLEANUP_INTERVAL_HOURS = 1
 
 
 def _ensure_dirs():
     """Create required directories."""
     for d in [config.UPLOAD_DIR, config.TEMP_DIR, config.LOG_DIR, config.MODELS_DIR]:
         d.mkdir(parents=True, exist_ok=True)
+
+
+def _cleanup_old_files():
+    """Delete uploads older than 24h and temp results older than 30 days."""
+    now = time.time()
+
+    # Uploads: delete after 24 hours
+    if config.UPLOAD_DIR.exists():
+        for f in config.UPLOAD_DIR.iterdir():
+            if f.is_file():
+                age_hours = (now - f.stat().st_mtime) / 3600
+                if age_hours > UPLOAD_MAX_AGE_HOURS:
+                    try:
+                        f.unlink()
+                        log.info("Cleaned upload: %s (%.1fh old)", f.name, age_hours)
+                    except OSError:
+                        pass
+
+    # Temp results: delete after 30 days (but not uploads subdir)
+    if config.TEMP_DIR.exists():
+        for f in config.TEMP_DIR.iterdir():
+            if f.is_file():
+                age_days = (now - f.stat().st_mtime) / 86400
+                if age_days > RESULT_MAX_AGE_DAYS:
+                    try:
+                        f.unlink()
+                        log.info("Cleaned result: %s (%.0fd old)", f.name, age_days)
+                    except OSError:
+                        pass
+
+
+def _start_cleanup_thread():
+    """Run periodic cleanup in background."""
+    def loop():
+        while True:
+            try:
+                _cleanup_old_files()
+            except Exception as e:
+                log.warning("Cleanup error: %s", e)
+            time.sleep(CLEANUP_INTERVAL_HOURS * 3600)
+
+    t = threading.Thread(target=loop, daemon=True)
+    t.start()
+
+
+def _extract_pixel_scale(file_path):
+    """Extract pixel scale (nm/px) from TIFF metadata if available.
+
+    Checks ImageJ metadata, OME-TIFF, and standard TIFF resolution tags.
+    Returns (scale_nm_per_px, unit_str) or (None, None) if not found.
+    """
+    path = Path(file_path)
+    if path.suffix.lower() not in (".tif", ".tiff"):
+        return None, None
+
+    try:
+        with tifffile.TiffFile(str(path)) as tif:
+            # Check ImageJ metadata
+            if tif.imagej_metadata:
+                ij = tif.imagej_metadata
+                unit = ij.get("unit", "")
+                spacing = ij.get("spacing", None)
+                if spacing and unit:
+                    # Convert to nm
+                    if unit in ("nm", "nanometer"):
+                        return float(spacing), "nm"
+                    elif unit in ("um", "µm", "micron", "micrometer"):
+                        return float(spacing) * 1000, "nm"
+                    elif unit in ("mm",):
+                        return float(spacing) * 1e6, "nm"
+
+            # Check standard TIFF resolution tags
+            for page in tif.pages[:1]:
+                tags = page.tags
+                res_unit_tag = tags.get("ResolutionUnit")
+                x_res_tag = tags.get("XResolution")
+                if res_unit_tag and x_res_tag:
+                    res_unit = res_unit_tag.value  # 1=none, 2=inch, 3=centimeter
+                    x_res = x_res_tag.value
+                    if isinstance(x_res, tuple):
+                        x_res = x_res[0] / x_res[1] if x_res[1] != 0 else 0
+                    if x_res > 0 and res_unit == 3:  # centimeter
+                        px_per_cm = x_res
+                        nm_per_px = 1e7 / px_per_cm
+                        if nm_per_px < 1e6:  # sanity check
+                            return nm_per_px, "nm"
+                    elif x_res > 0 and res_unit == 2:  # inch
+                        px_per_inch = x_res
+                        nm_per_px = 25.4e6 / px_per_inch
+                        if nm_per_px < 1e6:
+                            return nm_per_px, "nm"
+    except Exception:
+        pass
+
+    return None, None
 
 
 def _load_image(file_path):
@@ -93,7 +196,7 @@ def _gpu_cpu_status_html():
 
 
 def process_image(file, structures, mito_thresh, mito_min_area,
-                   mem_thresh, mem_min_area, progress=gr.Progress()):
+                   mem_thresh, mem_min_area, pixel_scale, progress=gr.Progress()):
     """Main processing function called by Gradio."""
     if file is None:
         raise gr.Error("Please upload an image first.")
@@ -121,6 +224,16 @@ def process_image(file, structures, mito_thresh, mito_min_area,
     # Load image
     img_gray = _load_image(file)
     h, w = img_gray.shape
+
+    # Determine pixel scale: manual entry > metadata > none
+    scale_nm = None
+    if pixel_scale and pixel_scale > 0:
+        scale_nm = float(pixel_scale)
+    else:
+        auto_scale, _ = _extract_pixel_scale(file)
+        if auto_scale:
+            scale_nm = auto_scale
+
     progress(0.2, desc=f"Image loaded: {w}x{h}")
 
     # Build per-structure threshold and min_area dicts
@@ -163,12 +276,13 @@ def process_image(file, structures, mito_thresh, mito_min_area,
         )
 
     # Compute morphometric metrics — side-by-side HTML
-    metrics = visualization.compute_morphometrics(results, img_gray.shape)
+    metrics = visualization.compute_morphometrics(results, img_gray.shape, scale_nm=scale_nm)
     elapsed = time.time() - t0
-    metrics_html = visualization.format_morphometrics_html(metrics)
+    metrics_html = visualization.format_morphometrics_html(metrics, scale_nm=scale_nm)
+    scale_info = f" &nbsp;|&nbsp; Scale: {scale_nm:.1f} nm/px" if scale_nm else ""
     metrics_html += (
         f'<div style="margin-top:12px; color:#94a3b8; font-size:0.85em;">'
-        f'Processing time: {elapsed:.1f}s &nbsp;|&nbsp; Image size: {w}x{h}'
+        f'Processing time: {elapsed:.1f}s &nbsp;|&nbsp; Image size: {w}x{h}{scale_info}'
         f'</div>'
     )
 
@@ -339,6 +453,13 @@ def create_app():
                         precision=0,
                     )
 
+                with gr.Accordion("Scale Settings", open=False):
+                    pixel_scale = gr.Number(
+                        value=0, label="Pixel Scale (nm/px)",
+                        info="Set to 0 for auto-detect from TIFF metadata. If no metadata, pixel units are used.",
+                        precision=2,
+                    )
+
                 run_btn = gr.Button("Run Segmentation", variant="primary", size="lg")
 
                 # GPU/CPU status with auto-refresh
@@ -377,7 +498,8 @@ def create_app():
         run_btn.click(
             fn=process_image,
             inputs=[file_input, structures_input,
-                    mito_thresh, mito_min_area, mem_thresh, mem_min_area],
+                    mito_thresh, mito_min_area, mem_thresh, mem_min_area,
+                    pixel_scale],
             outputs=[
                 input_image,
                 mito_overlay,
@@ -475,7 +597,12 @@ def main():
     from starlette.responses import JSONResponse, Response
     from starlette.routing import Route
 
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
+
     app = create_app()
+
+    # Start background cleanup (uploads 24h, results 30d)
+    _start_cleanup_thread()
 
     favicon_svg_path = STATIC_DIR / "favicon.svg"
     favicon_svg_bytes = favicon_svg_path.read_bytes() if favicon_svg_path.exists() else b""

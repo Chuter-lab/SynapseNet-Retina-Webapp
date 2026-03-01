@@ -1,0 +1,107 @@
+================================================================================
+THIRU WEBAPP — FUNCTIONALITY CHECKLIST
+================================================================================
+Last updated: 2026-02-28
+
+================================================================================
+CORE SEGMENTATION
+================================================================================
+[x] Mitochondria segmentation (UNet2d, focal loss fine-tuned)
+[x] Presynaptic membrane segmentation (UNet2d, focal loss fine-tuned)
+[x] Tiled inference (512x512 patches, 128px overlap, reflect padding)
+[x] Z-score normalization matching torch_em training pipeline
+[x] Per-structure prediction thresholds (mito: 0.35, membrane: 0.40)
+[x] Post-processing: morphological opening (disk radius=2)
+[x] Post-processing: connected component filtering with min instance area
+[x] Per-structure min instance area (mito: 5000px, membrane: 50000px)
+[x] Model caching (loaded once, reused across runs)
+
+================================================================================
+USER INTERFACE
+================================================================================
+[x] Three-panel display: Input | Mitochondria overlay | Membrane overlay
+[x] Structure selection checkboxes (Mitochondria, Presynaptic Membrane)
+[x] Per-structure settings accordion (threshold slider, min area)
+[x] Scale settings accordion (nm/px, auto-detect or manual entry)
+[x] Run Segmentation button
+[x] Side-by-side morphometric metrics tables (HTML)
+[x] Downloadable results (overlays, masks, metrics CSV, zip)
+[x] Space Mono font throughout
+[x] Custom THIRU logo SVG header
+[x] Custom favicon (SVG with gradients, login + main page)
+[x] Data policy and license display
+[x] Lead developer credit footer
+[x] Gradio PWA/manifest suppression (no "Open in app" prompt)
+[x] GPU/CPU status display with auto-refresh (3s interval)
+
+================================================================================
+SETTINGS & CONFIGURATION
+================================================================================
+[x] Mitochondria threshold slider (0.05-0.9, default 0.35)
+[x] Mitochondria min instance area (default 5000 px)
+[x] Membrane threshold slider (0.05-0.9, default 0.40)
+[x] Membrane min instance area (default 50000 px)
+[x] Pixel scale input (nm/px): auto-detect from TIFF metadata or manual entry
+[x] Pixel units fallback when no scale available
+
+================================================================================
+METRICS & ANALYSIS
+================================================================================
+[x] Instance count per structure
+[x] Total area (px or physical units)
+[x] Coverage percentage
+[x] Mean/min/max/std instance area
+[x] Mean circularity (mitochondria)
+[x] Mean aspect ratio (mitochondria)
+[x] Total perimeter (membrane)
+[x] Physical units (nm, nm^2) when pixel scale is provided
+[x] Metrics CSV export
+
+================================================================================
+DOWNLOADS
+================================================================================
+[x] THIRU_results.zip (all files bundled)
+[x] THIRU_display_panel.tif (combined 3-panel view)
+[x] THIRU_overlay_Mitochondria.tif
+[x] THIRU_overlay_Presynaptic_Membrane.tif
+[x] THIRU_mask_Mitochondria.tif (binary mask)
+[x] THIRU_mask_Presynaptic_Membrane.tif (binary mask)
+[x] THIRU_metrics.csv
+[x] Descriptive filenames with THIRU_ prefix
+[x] TIF format for all images
+
+================================================================================
+DATA POLICY & SECURITY
+================================================================================
+[x] Password-protected access (THIRU_AUTH environment variable)
+[x] Uploaded images deleted within 24 hours (background cleanup thread)
+[x] Cached results deleted after 30 days (background cleanup thread)
+[x] Cleanup runs hourly in background
+[x] No data shared externally
+[x] CC BY-NC-ND 4.0 license displayed
+
+================================================================================
+DEPLOYMENT & INFRASTRUCTURE
+================================================================================
+[x] Runs on eyenet-node02.uthsc.edu (NVIDIA RTX 3070, 8 GB)
+[x] Cloudflare tunnel: thiru.chuterlab.com
+[x] Conda environment: synapsenet
+[x] Port 7861
+[x] Auth credentials via /data/thiru/thiru_env.sh (base64 encoded)
+[x] Custom favicon route overrides (SVG + ICO)
+[x] Login page favicon injection
+[x] Empty manifest.json route (PWA suppression)
+
+================================================================================
+PLANNED / NOT YET IMPLEMENTED
+================================================================================
+[ ] Vesicle segmentation (model exists but removed from webapp for now)
+[ ] Batch processing (multiple images)
+[ ] Probability heatmap download option
+[ ] User-uploadable custom model checkpoints
+[ ] Session persistence (retain uploaded image across parameter changes)
+[ ] Scale bar overlay on output images
+[ ] OME-TIFF metadata in output files
+[ ] API access endpoint for programmatic use
+[ ] Academic email gating
+================================================================================
