@@ -8,13 +8,21 @@ CORE SEGMENTATION
 ================================================================================
 [x] Mitochondria segmentation (UNet2d, focal loss fine-tuned)
 [x] Presynaptic membrane segmentation (UNet2d, focal loss fine-tuned)
-[x] Tiled inference (512x512 patches, 128px overlap, reflect padding)
-[x] Z-score normalization matching torch_em training pipeline
+[x] Tiled inference (256px patches, stride 192, zero-padded per patch)
+[x] Min-max normalization to [0,1] matching training pipeline
+[x] torch.sigmoid activation (1-channel models), Sigmoid built-in (2-channel)
+[x] Channel 0 = foreground (SynapseNet convention)
 [x] Per-structure prediction thresholds (mito: 0.35, membrane: 0.40)
 [x] Post-processing: morphological opening (disk radius=2)
 [x] Post-processing: connected component filtering with min instance area
 [x] Per-structure min instance area (mito: 5000px, membrane: 50000px)
 [x] Model caching (loaded once, reused across runs)
+[x] TTA: 7 geometric augmentations for mitochondria (identity, hflip, vflip,
+    hvflip, rot90, rot180, rot270) — averaged probability maps
+[x] Ensemble: element-wise max of 3 models for mitochondria
+    (run008 fine-tuned, domain adapted, DA+fine-tuned)
+[x] Verified: webapp output matches node01 combination optimization
+    (>99.999% binary mask agreement, prob map max diff <0.002)
 
 ================================================================================
 USER INTERFACE
@@ -26,8 +34,8 @@ USER INTERFACE
 [x] Run Segmentation button
 [x] Side-by-side morphometric metrics tables (HTML)
 [x] Downloadable results (overlays, masks, metrics CSV, zip)
-[x] Space Mono font throughout
-[x] Custom THIRU logo SVG header
+[x] Space Mono font throughout (UI, login page, metrics tables)
+[x] Custom THIRU logo SVG header with aligned subtitle text
 [x] Custom favicon (SVG with gradients, login + main page)
 [x] Data policy and license display
 [x] Lead developer credit footer
@@ -91,6 +99,15 @@ DEPLOYMENT & INFRASTRUCTURE
 [x] Custom favicon route overrides (SVG + ICO)
 [x] Login page favicon injection
 [x] Empty manifest.json route (PWA suppression)
+
+================================================================================
+MODEL CHECKPOINTS
+================================================================================
+[x] retina_mitochondria_best.pt — run008 focal fine-tuned (1ch, no sigmoid)
+[x] retina_mitochondria_da.pt — domain adapted 2D UNet (2ch, Sigmoid)
+[x] retina_mitochondria_da_ft.pt — DA then fine-tuned (1ch, no sigmoid)
+[x] retina_membrane_best.pt — run008 focal fine-tuned (1ch, no sigmoid)
+[x] All models verified against node01 source checkpoints (weight checksums match)
 
 ================================================================================
 PLANNED / NOT YET IMPLEMENTED
