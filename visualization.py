@@ -233,7 +233,7 @@ def format_morphometrics_html(metrics):
         HTML string with side-by-side per-structure tables
     """
     table_style = (
-        "border-collapse:collapse; width:100%; font-size:0.9em;"
+        "border-collapse:collapse; width:100%; font-size:0.9em; font-family:'Space Mono',monospace;"
     )
     th_style = (
         "text-align:left; padding:6px 10px; border-bottom:2px solid #cbd5e1; "
