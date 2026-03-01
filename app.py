@@ -8,6 +8,7 @@ import numpy as np
 import cv2
 import tifffile
 import time
+import zipfile
 from pathlib import Path
 from PIL import Image
 import torch
@@ -130,33 +131,47 @@ def process_image(file, structures, threshold, progress=gr.Progress()):
     metrics_text = visualization.format_morphometrics_markdown(metrics)
     metrics_text += f"\n\n**Processing time:** {elapsed:.1f}s | **Image size:** {w}x{h}"
 
-    # Build download files
+    # Build download files — descriptive names, TIF format for images
     download_files = []
+    zip_contents = []  # (path, arcname) for zip
 
-    # 1. Combined panel PNG (the 3 images displayed)
+    # 1. Combined display panel
     panel_bgr = visualization.create_display_panel(img_gray, results, selected)
-    panel_path = config.TEMP_DIR / "display_panel.png"
-    cv2.imwrite(str(panel_path), panel_bgr)
+    panel_path = config.TEMP_DIR / "THIRU_display_panel.tif"
+    tifffile.imwrite(str(panel_path), cv2.cvtColor(panel_bgr, cv2.COLOR_BGR2RGB))
     download_files.append(str(panel_path))
+    zip_contents.append(str(panel_path))
 
-    # 2. Individual overlay PNGs
+    # 2. Individual overlay TIFs
     for struct in selected:
+        label = config.STRUCTURES[struct]["label"].replace(" ", "_")
         ov_bgr = visualization.create_individual_overlay(img_gray, results, struct)
-        ov_path = config.TEMP_DIR / f"overlay_{struct}.png"
-        cv2.imwrite(str(ov_path), ov_bgr)
+        ov_path = config.TEMP_DIR / f"THIRU_overlay_{label}.tif"
+        tifffile.imwrite(str(ov_path), cv2.cvtColor(ov_bgr, cv2.COLOR_BGR2RGB))
         download_files.append(str(ov_path))
+        zip_contents.append(str(ov_path))
 
     # 3. Individual binary mask TIFs
     for struct in selected:
-        mask_path = config.TEMP_DIR / f"mask_{struct}.tif"
+        label = config.STRUCTURES[struct]["label"].replace(" ", "_")
+        mask_path = config.TEMP_DIR / f"THIRU_mask_{label}.tif"
         mask_u8 = (results[struct]["binary"].astype(np.uint8) * 255)
         tifffile.imwrite(str(mask_path), mask_u8)
         download_files.append(str(mask_path))
+        zip_contents.append(str(mask_path))
 
     # 4. Metrics CSV
-    csv_path = config.TEMP_DIR / "metrics.csv"
+    csv_path = config.TEMP_DIR / "THIRU_metrics.csv"
     visualization.export_metrics_csv(metrics, csv_path)
     download_files.append(str(csv_path))
+    zip_contents.append(str(csv_path))
+
+    # 5. Download All zip
+    zip_path = config.TEMP_DIR / "THIRU_results.zip"
+    with zipfile.ZipFile(str(zip_path), "w", zipfile.ZIP_DEFLATED) as zf:
+        for fpath in zip_contents:
+            zf.write(fpath, Path(fpath).name)
+    download_files.insert(0, str(zip_path))  # zip first in list
 
     progress(1.0, desc="Done!")
 
