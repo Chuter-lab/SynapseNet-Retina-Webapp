@@ -248,9 +248,13 @@ def create_app():
     mem_cfg = config.STRUCTURES["membrane"]
 
     css = """
+    @import url('https://fonts.googleapis.com/css2?family=Space+Mono:ital,wght@0,400;0,700;1,400;1,700&display=swap');
     :root {
         --color-accent: #2563eb;
         --color-accent-soft: #dbeafe;
+    }
+    *, body, button, input, select, textarea, .gradio-container, .gradio-container * {
+        font-family: 'Space Mono', monospace !important;
     }
     .model-status { font-size: 0.9em; padding: 8px 12px; background: #f8fafc; border-radius: 6px; }
     .thiru-header { margin-bottom: 8px; }
@@ -443,7 +447,9 @@ def _patch_login_favicon(app):
     """Monkey-patch Gradio's login route to inject our favicon into the login page HTML."""
     favicon_tag = '<link rel="icon" type="image/svg+xml" href="/favicon.svg?v=3">'
     manifest_override = '<link rel="manifest" href="data:application/json,{}">'
-    inject = favicon_tag + manifest_override
+    font_link = '<link href="https://fonts.googleapis.com/css2?family=Space+Mono:ital,wght@0,400;0,700;1,400;1,700&display=swap" rel="stylesheet">'
+    font_style = "<style>*,body,button,input,select,textarea{font-family:'Space Mono',monospace!important;}</style>"
+    inject = favicon_tag + manifest_override + font_link + font_style
 
     # Find and wrap the login route handler
     for route in app.app.router.routes:

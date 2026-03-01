@@ -130,13 +130,11 @@ def segment(image_gray, structures=None, thresholds=None, min_areas=None):
     if min_areas is None:
         min_areas = {}
 
-    # Normalize to 0-1 float
-    if image_gray.dtype == np.uint8:
-        img_norm = image_gray.astype(np.float32) / 255.0
-    else:
-        img_norm = image_gray.astype(np.float32)
-        if img_norm.max() > 1.0:
-            img_norm = img_norm / img_norm.max()
+    # Standardize: zero-mean, unit-variance (matches torch_em training normalization)
+    img_norm = image_gray.astype(np.float32)
+    mean = img_norm.mean()
+    std = img_norm.std()
+    img_norm = (img_norm - mean) / (std + 1e-7)
 
     results = {}
     for struct in structures:
