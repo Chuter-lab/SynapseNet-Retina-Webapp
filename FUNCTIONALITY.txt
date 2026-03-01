@@ -125,6 +125,15 @@ MODEL CHECKPOINTS
 [x] All models verified against node01 source checkpoints (weight checksums match)
 
 ================================================================================
+PHYSICAL SCALE
+================================================================================
+[x] XY pixel size: 5.0 nm/px (TIFF metadata, rounded from DM4 4.681 nm/px)
+[x] Z section spacing: ~54 nm (TrakEM2 layer thickness 10.79 × 5.0 nm/px)
+[x] Z:XY anisotropy ratio: ~10.8:1
+[x] Image size: 7000 × 7000 px per montage (4×1 tiles, 15% overlap)
+[x] Imaging: Zeiss SEM + DigiScan, 2 kV, serial ultra-thin sections
+
+================================================================================
 PLANNED / NOT YET IMPLEMENTED
 ================================================================================
 [x] Synaptic ribbon segmentation (model trained and deployed)
@@ -137,4 +146,29 @@ PLANNED / NOT YET IMPLEMENTED
 [ ] OME-TIFF metadata in output files
 [ ] API access endpoint for programmatic use
 [ ] Academic email gating
+
+================================================================================
+PLANNED: 3D-AWARE PIPELINE (NEXT DATASET)
+================================================================================
+See PLAN_3D_PIPELINE.txt for full details.
+
+Phase 1 — Post-hoc 3D consistency (no retraining):
+  [ ] 3D connected components on stacked 2D predictions
+  [ ] Instance tracking across z-slices
+  [ ] Z-smoothing of probability maps
+  [ ] Update 3D render with correct physical z-scale (54 nm sections)
+  [ ] Physical-unit morphometrics (nm, nm², nm³)
+
+Phase 2 — 3D-aware models (requires >= 8 annotated serial sections):
+  [ ] 2.5D input: adjacent slices as multi-channel input to 2D U-Net
+  [ ] 3D AnisotropicUNet: fine-tune SynapseNet pretrained 3D model
+  [ ] Voxel size config: (54, 5, 5) nm for anisotropic kernel selection
+  [ ] 3D evaluation: volumetric Dice, 3D instance metrics
+
+Phase 3 — Webapp integration:
+  [ ] Stack upload (multi-TIFF or folder of serial sections)
+  [ ] Inference mode toggle: 2D / 2.5D / 3D
+  [ ] Interactive 3D visualization (three.js or similar)
+  [ ] 3D morphometrics: volume, surface area, 3D aspect ratio
+  [ ] 3D mesh export (OBJ/STL), volumetric masks (OME-TIFF)
 ================================================================================

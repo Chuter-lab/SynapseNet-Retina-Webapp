@@ -1,0 +1,230 @@
+================================================================================
+PLAN: 3D-AWARE SEGMENTATION PIPELINE
+================================================================================
+Status: PLANNED — to implement alongside current 2D pipeline with next
+        annotated dataset (larger, multi-stack serial sections)
+Last updated: 2026-03-01
+
+================================================================================
+MOTIVATION
+================================================================================
+The current pipeline treats each TEM section independently (2D U-Net per slice).
+This works but discards z-context: a mitochondrion visible in slice N is very
+likely present in N±1, but the 2D model has no way to know this. With full
+serial-section stacks (tens to hundreds of slices), 3D-aware methods should
+improve continuity, reduce per-slice false positives/negatives, and enable
+true volumetric instance segmentation.
+
+Larger structures (membrane, mitochondria) span many sections and benefit most.
+Smaller structures (ribbon, vesicles) span 1-3 sections but still benefit from
+boundary refinement via z-context.
+
+================================================================================
+PHYSICAL SCALE (CURRENT DATASET)
+================================================================================
+XY pixel size:       5.0 nm/px (TIFF metadata, confirmed from DM4 source)
+                     Raw DM4 value: 4.681 nm/px (32.768 µm FOV / 7000 px)
+                     ImageJ/TIFF rounded to 200 px/µm = 5.0 nm/px
+Z section spacing:   ~54 nm (TrakEM2 layer thickness 10.79 units × 5.0 nm/px)
+Z:XY anisotropy:     ~10.8:1 (54 nm z / 5 nm xy)
+Image size:          7000 × 7000 px per montage (4×1 tiles, 15% overlap)
+Imaging:             Zeiss SEM + DigiScan, 2 kV, serial ultra-thin sections
+
+These values are critical for:
+  - Correct 3D rendering aspect ratios
+  - AnisotropicUNet voxel size configuration
+  - Physical-unit morphometrics (nm, nm², nm³)
+
+================================================================================
+APPROACH 1: 2.5D INPUT (LOWEST BARRIER)
+================================================================================
+Overview:
+  Feed adjacent slices as multi-channel input to the existing 2D U-Net.
+  Slice N-1, N, N+1 → 3-channel input → predict mask for slice N.
+
+Advantages:
+  - Reuses existing 2D U-Net architecture (just change in_channels from 1 to 3)
+  - Minimal code changes to training and inference pipelines
+  - Gives immediate z-context without full 3D convolutions
+  - Handles z-anisotropy naturally (no 3D kernel needed)
+
+Implementation:
+  1. Data loader: stack 3 adjacent slices as channels per training sample
+     - Edge handling: replicate first/last slice for boundary sections
+  2. Model: change SynapseNet 2D U-Net in_channels=3 (or load pretrained
+     with 1ch and replicate first conv weights ÷ 3)
+  3. Inference: sliding window in z with 3-slice context
+  4. Tiled inference in xy as before (256px patches, stride 192)
+
+Expected benefit:
+  - Moderate improvement for large structures (mito, membrane)
+  - Reduced flickering/inconsistency between adjacent slices
+  - Low training cost (same GPU time as 2D)
+
+================================================================================
+APPROACH 2: 3D U-NET (MOST POWERFUL)
+================================================================================
+Overview:
+  Fine-tune SynapseNet's pretrained 3D AnisotropicUNet on serial-section data.
+  The AnisotropicUNet uses anisotropic kernels to handle different z vs xy
+  resolution — critical for our ~10.8:1 anisotropy.
+
+Advantages:
+  - Full volumetric context across all dimensions
+  - Pretrained 3D weights available from SynapseNet (cryo-ET organelles)
+  - AnisotropicUNet designed for exactly this resolution mismatch
+  - Best potential for continuous 3D structure segmentation
+
+Implementation:
+  1. Convert training data to 3D volumes:
+     - Stack serial sections into (Z, H, W) arrays
+     - Store as HDF5 with voxel_size = (54.0, 5.0, 5.0) nm
+  2. Configure SynapseNet 3D training:
+     - Pretrained: "mitochondria_3d" / "vesicles_3d" as starting point
+     - Patch shape: (Z_depth, 256, 256) — Z_depth depends on stack size
+     - Voxel size: (54.0, 5.0, 5.0) for anisotropic kernel selection
+  3. Training considerations:
+     - Need sufficient z-depth (>= 8-16 slices for meaningful 3D context)
+     - Data augmentation: random 3D flips, elastic deformation in xy
+     - z-augmentation limited by anisotropy (no z-flips if asymmetric)
+  4. Inference:
+     - 3D tiled inference with overlap in all dimensions
+     - Output: full 3D probability volume → threshold → 3D connected components
+
+Requirements:
+  - Annotated stacks with >= 8-16 serial sections (current 3 is too few)
+  - GPU memory: 3D U-Net needs more VRAM (may need RTX 3090 or A100)
+  - Training time: significantly longer than 2D
+
+Expected benefit:
+  - Large improvement for structures spanning many z-slices
+  - True 3D instance segmentation (track individual mito across z)
+  - Smooth, continuous 3D surfaces in reconstructions
+
+================================================================================
+APPROACH 3: POST-HOC 3D CONSISTENCY (NO RETRAINING)
+================================================================================
+Overview:
+  Keep current 2D predictions but enforce 3D consistency as post-processing.
+  Cheapest option — works with existing models.
+
+Methods:
+  a) 3D connected components:
+     - Stack 2D binary masks → run 3D connected components
+     - Filter by 3D volume (min_volume replaces min_area)
+     - Automatically links structures across slices
+
+  b) Instance tracking:
+     - For each instance in slice N, find overlapping instance in N+1
+     - Build instance tracks across z
+     - Merge fragmented detections, remove single-slice noise
+
+  c) Z-smoothing:
+     - Apply Gaussian or median filter to probability maps along z
+     - Re-threshold smoothed volume
+     - Reduces per-slice flickering
+
+  d) 3D CRF:
+     - Conditional random field on the 3D probability volume
+     - Enforces spatial smoothness while respecting image boundaries
+
+Advantages:
+  - No retraining needed
+  - Works with current 2D model checkpoints immediately
+  - Can be added to webapp as optional post-processing step
+
+Limitations:
+  - Cannot recover structures that 2D model fails to detect
+  - No true z-context during prediction (only post-hoc smoothing)
+
+================================================================================
+RECOMMENDED IMPLEMENTATION ORDER
+================================================================================
+Phase 1 (immediate, current models):
+  [ ] Add 3D post-processing option to webapp (Approach 3a-c)
+  [ ] Update 3D render figure with correct physical z-scale (54 nm sections)
+  [ ] Report morphometrics in physical units (nm, nm², nm³) when scale known
+
+Phase 2 (with new annotated dataset, >= 8 sections):
+  [ ] Train 2.5D models as quick win (Approach 1)
+  [ ] Compare 2.5D vs 2D on same test data
+  [ ] If sufficient z-depth: train 3D AnisotropicUNet (Approach 2)
+  [ ] Full 3D evaluation: volumetric Dice, 3D instance metrics
+
+Phase 3 (webapp integration):
+  [ ] Add stack upload support (multi-TIFF or folder of sections)
+  [ ] Toggle: 2D independent vs 2.5D vs 3D inference mode
+  [ ] 3D visualization in webapp (three.js or similar for interactive view)
+  [ ] 3D morphometrics: volume, surface area, 3D aspect ratio
+  [ ] Export: 3D meshes (OBJ/STL), volumetric masks (OME-TIFF)
+
+================================================================================
+PER-STRUCTURE CONSIDERATIONS
+================================================================================
+Mitochondria:
+  - Span many sections, large cross-sections
+  - Biggest beneficiary of 3D context
+  - 3D instance segmentation would enable volume measurement per organelle
+  - Current 2D ensemble approach may be replaceable by single 3D model
+
+Presynaptic membrane:
+  - Continuous structure spanning entire stack
+  - 3D model would enforce topological continuity (single connected surface)
+  - Z-consistency post-processing alone may give large improvement
+  - 3D surface area measurement becomes meaningful
+
+Synaptic ribbon:
+  - Small, spans 1-3 sections typically
+  - 3D context helps less for detection but improves boundary precision
+  - 3D volume measurement useful for ribbon size quantification
+  - Instance count should be consistent across z (same ribbon = same ID)
+
+Synaptic vesicles:
+  - Smallest structures, ~30-100 px per instance in 2D
+  - Individual vesicles span 1-2 sections at most
+  - 3D context could help distinguish overlapping vesicles
+  - Ribbon-proximity prior remains valuable in 3D (spherical distance mask)
+  - Highest resolution imaging may be needed for true individual detection
+
+================================================================================
+DATASET REQUIREMENTS FOR NEXT RUN
+================================================================================
+Minimum:
+  - >= 8 serial sections per annotated region (for 3D U-Net training)
+  - >= 2 annotated regions (train/test split)
+  - All 4 structures annotated on every section
+  - Consistent imaging conditions across sections
+
+Ideal:
+  - 20-50 serial sections per region
+  - 3-5 annotated regions from different tissue blocks
+  - Multiple tissue types or retinal regions for generalizability
+  - Section thickness measured/recorded (not just TrakEM2 estimate)
+
+Metadata to record:
+  - Exact section thickness (nm) — from ultramicrotome settings or EELS
+  - XY pixel size (nm/px) — from calibrated magnification
+  - Imaging voltage, detector, dwell time
+  - Tissue type, species, preparation method
+
+================================================================================
+TECHNICAL NOTES
+================================================================================
+SynapseNet 3D model compatibility:
+  - Pretrained 3D AnisotropicUNet checkpoint exists (341 MB, tested in DA run)
+  - DA alone scored Dice=0.000 on retinal data (expected — needs fine-tuning)
+  - With sufficient annotated 3D data, fine-tuning should work as it did in 2D
+  - SynapseNet v0.4.1 supports voxel_size parameter for anisotropic kernels
+
+GPU requirements:
+  - 3D U-Net with (16, 256, 256) patches: ~6-10 GB VRAM
+  - RTX 3090 (24 GB, node01): sufficient for training
+  - RTX 3070 (8 GB, node02): may need smaller patches for inference
+  - Consider batch_size=1-2 for 3D (vs 8 for 2D)
+
+z-anisotropy handling:
+  - Voxel size (54, 5, 5) nm → anisotropy ratio ~10.8
+  - AnisotropicUNet adapts kernel sizes per axis
+  - Data augmentation: augment in xy freely, restrict z augmentations
+  - Interpolation to isotropic possible but increases data size 10x
+================================================================================
