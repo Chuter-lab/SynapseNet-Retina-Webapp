@@ -152,8 +152,8 @@ def compute_morphometrics(results, image_shape, scale_nm=None):
             m["max_area"] = round(float(np.max(areas)) * area_factor, 2)
             m["std_area"] = round(float(np.std(areas)) * area_factor, 2)
 
-            # Circularity and aspect ratio for mitochondria and ribbon
-            if struct_name in ("mitochondria", "ribbon"):
+            # Circularity and aspect ratio for mitochondria, ribbon, and vesicles
+            if struct_name in ("mitochondria", "ribbon", "vesicles"):
                 circularities = []
                 aspect_ratios = []
                 major_lengths = []
@@ -171,7 +171,7 @@ def compute_morphometrics(results, image_shape, scale_nm=None):
                     m["mean_circularity"] = round(float(np.mean(circularities)), 4)
                 if aspect_ratios:
                     m["mean_aspect_ratio"] = round(float(np.mean(aspect_ratios)), 4)
-                if struct_name == "ribbon" and major_lengths:
+                if struct_name in ("ribbon", "vesicles") and major_lengths:
                     m["mean_length"] = round(float(np.mean(major_lengths)) * len_factor, 2)
 
             # Membrane-specific: total perimeter
