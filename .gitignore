@@ -19,3 +19,13 @@ SynapseNet-Retina-Submission/**/*.tiff
 SynapseNet-Retina-Submission/*.docx
 SynapseNet-Retina-Submission/**/*.docx
 .DS_Store
+
+.virtual_documents/
+**/.virtual_documents/
+
+.venv/
+venv/
+env/
+
+.ipynb_checkpoints/
+**/.ipynb_checkpoints/
